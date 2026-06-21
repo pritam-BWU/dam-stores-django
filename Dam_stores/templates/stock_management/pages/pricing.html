@@ -1,0 +1,218 @@
+{% extends "stock_management/components/app_shell.html" %}
+
+{% block content %}
+<div class="space-y-5">
+  {% if messages %}
+    <div class="space-y-2">
+      {% for message in messages %}
+        <div class="rounded-md border border-border bg-card px-4 py-3 text-sm">{{ message }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <div class="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
+    {% include "stock_management/components/stat_card.html" with label="Price Changes (30d)" value=changes_total icon="tag" tone_class="bg-primary/10 text-primary" %}
+    {% include "stock_management/components/stat_card.html" with label="Increases" value=increases icon="trending-up" tone_class="bg-destructive/10 text-destructive" tone_style="background: rgb(var(--destructive) / 0.12); color: rgb(var(--destructive));" %}
+    {% include "stock_management/components/stat_card.html" with label="Decreases" value=decreases icon="trending-down" tone_class="bg-emerald-500/10 text-emerald-600" tone_style="background: rgb(var(--success) / 0.12); color: rgb(var(--success));" %}
+    {% include "stock_management/components/stat_card.html" with label="Products Priced" value=priced_products icon="package-check" tone_class="bg-sky-500/10 text-sky-600" %}
+  </div>
+
+  {% if selected %}
+    <div class="xl:hidden bg-card border border-border rounded-xl p-4">
+      <div class="relative" data-product-picker data-param="item">
+        <input id="mobile-price-item-search" class="form-input h-9" value="{% if has_selected_item_query %}{{ selected_product_label }}{% endif %}" placeholder="Search product" autocomplete="off">
+        <div class="hidden absolute z-30 mt-1 w-full overflow-hidden rounded-md border border-border bg-card shadow-xl" data-product-results></div>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+      <div class="xl:col-span-2 bg-card border border-border rounded-xl p-5 {% if not has_selected_item_query %}hidden xl:block{% endif %}">
+        <div class="flex items-start justify-between mb-3 flex-wrap gap-2">
+          <div>
+            <div class="text-xs text-muted-foreground">Price history</div>
+            <div class="font-semibold">{{ selected.display_name }} - {% if selected.pack_size %}{{ selected.pack_size }} {% endif %}{{ selected.unit }}</div>
+            <div class="text-xs text-muted-foreground">{{ selected.sku }} - {{ selected.product_node.full_path }}</div>
+          </div>
+          <div class="relative w-full sm:w-80" data-product-picker data-param="item">
+            <input id="price-item-search" class="form-input h-9" value="{{ selected_product_label }}" placeholder="Search product" autocomplete="off">
+            <div class="hidden absolute z-30 mt-1 w-full overflow-hidden rounded-md border border-border bg-card shadow-xl" data-product-results></div>
+          </div>
+        </div>
+        <div class="flex items-baseline gap-4 mb-4 flex-wrap">
+          <div><div class="text-[10px] uppercase text-muted-foreground">Sell Rate</div><div class="text-3xl font-semibold" style="color: rgb(var(--success));">Rs {{ selected.sell_rate }}</div></div>
+          <div><div class="text-[10px] uppercase text-muted-foreground">Previous Sell</div><div class="text-lg text-muted-foreground line-through">Rs {{ selected.previous_sell_rate }}</div></div>
+          <div><div class="text-[10px] uppercase text-muted-foreground">Buy Rate</div><div class="text-lg font-semibold" style="color: rgb(var(--destructive));">Rs {{ selected.buy_rate }}</div></div>
+          <div><div class="text-[10px] uppercase text-muted-foreground">Previous Buy</div><div class="text-lg text-muted-foreground line-through">Rs {{ selected.previous_buy_rate }}</div></div>
+          <span class="badge {% if selected_change > 0 %}badge-destructive{% elif selected_change < 0 %}badge-success{% else %}badge-muted{% endif %}">{% if selected_change > 0 %}+{% endif %}{{ selected_change }}%</span>
+        </div>
+        <div class="h-64 sm:h-72">
+          <canvas id="priceChart"></canvas>
+        </div>
+      </div>
+
+      <div class="bg-card border border-border rounded-xl p-5">
+        <h3 class="font-semibold text-sm mb-3 flex items-center gap-2">
+          <i data-lucide="trending-up" class="w-4 h-4" style="color: rgb(var(--destructive));"></i>
+          Top Price Increases
+        </h3>
+        <div class="space-y-2">
+          {% for p in top_price_increases %}
+            <div class="p-2.5 rounded-lg border border-border flex items-center gap-3">
+              <div class="w-8 h-8 rounded-md flex items-center justify-center shrink-0" style="background: rgb(var(--destructive) / 0.12); color: rgb(var(--destructive));">
+                <i data-lucide="trending-up" class="w-4 h-4"></i>
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="text-sm font-medium truncate">{{ p.product_item.display_name }} <span class="text-muted-foreground">- {{ p.product_item.unit }}</span></div>
+                <div class="text-[11px] text-muted-foreground">Rs {{ p.old_sell_rate }} to Rs {{ p.new_sell_rate }}</div>
+              </div>
+              <div class="text-right shrink-0">
+                <span class="badge badge-destructive">{{ p.change_sign }}{{ p.change_pct }}%</span>
+              </div>
+            </div>
+          {% empty %}
+            <div class="text-sm text-muted-foreground">No increased prices recorded yet.</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <div class="bg-card border border-border rounded-xl p-5">
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-3">
+          <h3 class="font-semibold text-sm">Price Change Timeline</h3>
+          <div class="flex items-center gap-2 w-full lg:w-auto">
+            <div class="relative flex-1 lg:w-80" data-product-picker data-param="timeline_item" data-label-param="timeline_q" data-reset-page="1">
+              <input id="timeline-product-search" class="form-input h-9" value="{{ timeline_search }}" placeholder="Search product timeline" autocomplete="off">
+              <div class="hidden absolute z-30 mt-1 w-full overflow-hidden rounded-md border border-border bg-card shadow-xl" data-product-results></div>
+            </div>
+            {% if timeline_item_id or timeline_search %}
+              <a href="/pricing/{% if selected %}?item={{ selected.id }}{% endif %}" class="h-9 w-9 rounded-md border border-border inline-flex items-center justify-center hover:bg-muted" title="Clear timeline search"><i data-lucide="x" class="w-4 h-4"></i></a>
+            {% endif %}
+          </div>
+        </div>
+        <div class="space-y-1.5">
+          {% for p in price_changes %}
+            <div class="flex items-center gap-3 p-2.5 rounded-lg hover:bg-muted/40 text-sm">
+              <div class="w-8 h-8 rounded-md flex items-center justify-center shrink-0 {% if p.change_pct == 0 %}bg-muted text-muted-foreground{% endif %}" style="{% if p.change_pct > 0 %}background: rgb(var(--destructive) / 0.12); color: rgb(var(--destructive));{% elif p.change_pct < 0 %}background: rgb(var(--success) / 0.12); color: rgb(var(--success));{% endif %}"><i data-lucide="{% if p.change_pct > 0 %}trending-up{% elif p.change_pct < 0 %}trending-down{% else %}minus{% endif %}" class="w-4 h-4"></i></div>
+              <div class="flex-1 min-w-0"><div class="truncate">{{ p.product_item.display_name }} <span class="text-muted-foreground">- {{ p.product_item.unit }}</span></div><div class="text-[11px] text-muted-foreground">{{ p.changed_by.name|default:p.changed_by.username }} - {{ p.time_label }}</div></div>
+              <div class="hidden sm:flex items-center gap-2 shrink-0"><span class="text-muted-foreground text-xs">Rs {{ p.old_sell_rate }}</span><i data-lucide="arrow-right" class="w-3 h-3 text-muted-foreground"></i><span class="font-semibold">Rs {{ p.new_sell_rate }}</span><span class="badge badge-{{ p.tone }}">{{ p.change_sign }}{{ p.change_pct }}%</span></div>
+            </div>
+          {% empty %}
+            <div class="text-sm text-muted-foreground py-6 text-center">No price changes recorded yet.</div>
+          {% endfor %}
+        </div>
+        {% if price_page.paginator.count %}
+          <div class="mt-4 pt-3 border-t border-border flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-sm">
+            <div class="text-muted-foreground">Showing {{ price_page.start_index }}-{{ price_page.end_index }} of {{ price_page.paginator.count }}</div>
+            <div class="flex items-center gap-2">
+              {% if price_page.has_previous %}
+                <a class="h-8 px-3 rounded-md border border-border inline-flex items-center justify-center hover:bg-muted" href="{{ timeline_page_prefix }}page={{ price_page.previous_page_number }}">Previous</a>
+              {% else %}
+                <span class="h-8 px-3 rounded-md border border-border inline-flex items-center justify-center text-muted-foreground opacity-60">Previous</span>
+              {% endif %}
+              <span class="text-xs text-muted-foreground">Page {{ price_page.number }} of {{ price_page.paginator.num_pages }}</span>
+              {% if price_page.has_next %}
+                <a class="h-8 px-3 rounded-md border border-border inline-flex items-center justify-center hover:bg-muted" href="{{ timeline_page_prefix }}page={{ price_page.next_page_number }}">Next</a>
+              {% else %}
+                <span class="h-8 px-3 rounded-md border border-border inline-flex items-center justify-center text-muted-foreground opacity-60">Next</span>
+              {% endif %}
+            </div>
+          </div>
+        {% endif %}
+    </div>
+  {% else %}
+    <div class="bg-card border border-border rounded-xl p-10 text-center text-sm text-muted-foreground">Create products before managing prices.</div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+  const escapeHtml = (value) => String(value || "").replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#039;"
+  }[char]));
+
+  const productSearchUrl = "/pricing/product-search/";
+  const applyProductSelection = (picker, product) => {
+    const params = new URLSearchParams(window.location.search);
+    const param = picker.dataset.param;
+    const labelParam = picker.dataset.labelParam;
+    if (param) params.set(param, product.id);
+    if (labelParam) params.set(labelParam, product.label);
+    if (picker.dataset.resetPage) params.delete("page");
+    window.location.href = `${window.location.pathname}?${params.toString()}`;
+  };
+
+  document.querySelectorAll("[data-product-picker]").forEach((picker) => {
+    const input = picker.querySelector("input");
+    const results = picker.querySelector("[data-product-results]");
+    let lastMatches = [];
+    let searchTimer;
+
+    const renderResults = (matches) => {
+      lastMatches = matches;
+      if (!input.value.trim()) {
+        results.classList.add("hidden");
+        results.innerHTML = "";
+        return;
+      }
+      results.innerHTML = matches.length ? matches.map((product, index) => `
+        <button type="button" class="product-search-option w-full text-left px-3 py-2 hover:bg-muted border-t border-border first:border-t-0" data-index="${index}">
+          <span class="text-sm font-medium">${escapeHtml(product.label)}</span>
+          <span class="block text-[11px] text-muted-foreground truncate">SKU ${escapeHtml(product.sku)} - ${escapeHtml(product.path)}</span>
+        </button>
+      `).join("") : `<div class="px-3 py-2 text-sm text-muted-foreground">No product found</div>`;
+      results.querySelectorAll(".product-search-option").forEach((button) => {
+        button.addEventListener("click", () => applyProductSelection(picker, lastMatches[Number(button.dataset.index)]));
+      });
+      results.classList.remove("hidden");
+    };
+
+    const runSearch = async () => {
+      const term = input.value.trim();
+      if (!term) {
+        renderResults([]);
+        return;
+      }
+      const response = await fetch(`${productSearchUrl}?q=${encodeURIComponent(term)}`, { headers: { "Accept": "application/json" } });
+      if (!response.ok) return;
+      const payload = await response.json();
+      renderResults(payload.results || []);
+    };
+
+    input?.addEventListener("input", () => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(runSearch, 180);
+    });
+    input?.addEventListener("focus", () => {
+      if (lastMatches.length) results.classList.remove("hidden");
+    });
+    input?.addEventListener("keydown", async (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      if (!lastMatches.length) await runSearch();
+      if (lastMatches[0]) applyProductSelection(picker, lastMatches[0]);
+    });
+  });
+
+  document.addEventListener("click", (event) => {
+    document.querySelectorAll("[data-product-picker]").forEach((picker) => {
+      if (!picker.contains(event.target)) picker.querySelector("[data-product-results]")?.classList.add("hidden");
+    });
+  });
+
+  const priceHistory = {{ price_history_json|safe }};
+  const chartEl = document.getElementById("priceChart");
+  if (chartEl) {
+    const priceChart = new Chart(chartEl, {
+      type: "line",
+      data: { labels: priceHistory.map(x => x.date), datasets: [{ label: "Sell Rate", data: priceHistory.map(x => x.rate), borderColor: "#2563eb", backgroundColor: "rgb(37 99 235 / .14)", fill: true, tension: .35 }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { maxTicksLimit: window.matchMedia("(max-width: 640px)").matches ? 4 : 8 } } } }
+    });
+    requestAnimationFrame(() => priceChart.resize());
+  }
+</script>
+{% endblock %}

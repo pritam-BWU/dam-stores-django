@@ -1,0 +1,244 @@
+{% extends "stock_management/components/app_shell.html" %}
+
+{% block content %}
+<div class="space-y-5">
+  {% if messages %}
+    <div class="space-y-2">
+      {% for message in messages %}
+        <div class="rounded-md border border-border bg-card px-4 py-3 text-sm">{{ message }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <div class="bg-card border border-border rounded-xl p-4 flex flex-col lg:flex-row lg:items-end justify-between gap-3">
+    <form method="get" class="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_180px_auto] gap-2 flex-1">
+      <label>
+        <div class="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Product Search</div>
+        <input name="q" class="form-input h-9" value="{{ query }}" placeholder="Search product or SKU">
+      </label>
+      <label>
+        <div class="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Date</div>
+        <input name="date" type="date" class="form-input h-9" value="{{ date_filter|date:'Y-m-d' }}">
+      </label>
+      <button class="h-9 px-3 rounded-md border border-border text-sm hover:bg-muted self-end">Search</button>
+    </form>
+    <button id="open-damage-modal" type="button" class="inline-flex items-center justify-center gap-2 h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90">
+      <i data-lucide="plus" class="w-4 h-4"></i>
+      Add Damaged Product
+    </button>
+  </div>
+
+  <div class="bg-card border border-border rounded-xl overflow-hidden">
+    <div class="hidden md:block overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-muted/40 text-muted-foreground text-xs">
+          <tr>
+            <th class="text-left font-medium px-4 py-3">Date</th>
+            <th class="text-left font-medium px-4 py-3">Product</th>
+            <th class="text-left font-medium px-4 py-3">Product ID</th>
+            <th class="text-right font-medium px-4 py-3">Damaged Quantity</th>
+            <th class="text-left font-medium px-4 py-3">Note</th>
+            <th class="text-right font-medium px-4 py-3">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in damage_page.object_list %}
+            <tr class="border-t border-border hover:bg-muted/30">
+              <td class="px-4 py-3">{{ row.created_at|date:"Y-m-d" }}</td>
+              <td class="px-4 py-3">
+                <div class="font-medium">{{ row.product.display_name }}</div>
+                <div class="text-xs text-muted-foreground">{{ row.product.product_node.full_path }}</div>
+              </td>
+              <td class="px-4 py-3 text-xs font-mono text-muted-foreground">{{ row.product_id }}</td>
+              <td class="px-4 py-3 text-right font-semibold">{{ row.damaged_quantity }}</td>
+              <td class="px-4 py-3 text-muted-foreground max-w-xs truncate">{{ row.note|default:"-" }}</td>
+              <td class="px-4 py-3 text-right">
+                <button type="button" class="open-damage-edit w-8 h-8 rounded hover:bg-muted inline-flex items-center justify-center"
+                  data-id="{{ row.id }}" data-product-id="{{ row.product_id }}" data-product-label="{{ row.product.display_name }} - {{ row.product.sku }}"
+                  data-quantity="{{ row.damaged_quantity }}" data-note="{{ row.note|default:'' }}" title="Edit">
+                  <i data-lucide="edit-3" class="w-4 h-4"></i>
+                </button>
+                <button type="button" class="open-damage-delete w-8 h-8 rounded hover:bg-destructive/10 text-destructive inline-flex items-center justify-center"
+                  data-id="{{ row.id }}" data-product="{{ row.product.display_name }}" title="Delete">
+                  <i data-lucide="trash-2" class="w-4 h-4"></i>
+                </button>
+              </td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="6" class="px-4 py-12 text-center text-sm text-muted-foreground">No damaged products found.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="md:hidden divide-y divide-border">
+      {% for row in damage_page.object_list %}
+        <div class="p-4 space-y-3">
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <div class="font-medium truncate">{{ row.product.display_name }}</div>
+              <div class="text-xs text-muted-foreground">{{ row.created_at|date:"Y-m-d" }} - Product ID {{ row.product_id }}</div>
+            </div>
+            <div class="text-right shrink-0">
+              <div class="font-semibold">{{ row.damaged_quantity }}</div>
+              <div class="text-[11px] text-muted-foreground">damaged</div>
+            </div>
+          </div>
+          <div class="text-sm text-muted-foreground">{{ row.note|default:"No note" }}</div>
+          <div class="flex justify-end gap-2">
+            <button type="button" class="open-damage-edit h-8 px-3 rounded-md border border-border text-sm"
+              data-id="{{ row.id }}" data-product-id="{{ row.product_id }}" data-product-label="{{ row.product.display_name }} - {{ row.product.sku }}"
+              data-quantity="{{ row.damaged_quantity }}" data-note="{{ row.note|default:'' }}">Edit</button>
+            <button type="button" class="open-damage-delete h-8 px-3 rounded-md border border-border text-sm text-destructive"
+              data-id="{{ row.id }}" data-product="{{ row.product.display_name }}">Delete</button>
+          </div>
+        </div>
+      {% empty %}
+        <div class="px-4 py-12 text-center text-sm text-muted-foreground">No damaged products found.</div>
+      {% endfor %}
+    </div>
+
+    {% if damage_page.paginator.count %}
+      <div class="border-t border-border px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-sm">
+        <div class="text-muted-foreground">Showing {{ damage_page.start_index }}-{{ damage_page.end_index }} of {{ damage_page.paginator.count }}</div>
+        <div class="flex items-center gap-2">
+          {% if damage_page.has_previous %}
+            <a class="h-8 px-3 rounded-md border border-border inline-flex items-center justify-center hover:bg-muted" href="?q={{ query|urlencode }}&date={{ date_filter|date:'Y-m-d' }}&page={{ damage_page.previous_page_number }}">Previous</a>
+          {% else %}
+            <span class="h-8 px-3 rounded-md border border-border inline-flex items-center justify-center text-muted-foreground opacity-60">Previous</span>
+          {% endif %}
+          <span class="text-xs text-muted-foreground">Page {{ damage_page.number }} of {{ damage_page.paginator.num_pages }}</span>
+          {% if damage_page.has_next %}
+            <a class="h-8 px-3 rounded-md border border-border inline-flex items-center justify-center hover:bg-muted" href="?q={{ query|urlencode }}&date={{ date_filter|date:'Y-m-d' }}&page={{ damage_page.next_page_number }}">Next</a>
+          {% else %}
+            <span class="h-8 px-3 rounded-md border border-border inline-flex items-center justify-center text-muted-foreground opacity-60">Next</span>
+          {% endif %}
+        </div>
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<div id="damage-modal" class="hidden fixed inset-0 z-50 bg-black/55 backdrop-blur-sm items-center justify-center overflow-y-auto p-4">
+  <form method="post" class="w-full max-w-xl max-h-[calc(100vh-2rem)] modal-surface border border-border rounded-xl shadow-2xl overflow-hidden flex flex-col">
+    {% csrf_token %}
+    <input type="hidden" name="action" id="damage-action" value="create_damaged_product">
+    <input type="hidden" name="damage_id" id="damage-id">
+    <input type="hidden" name="product_id" id="damage-product-id">
+    <div class="h-14 px-5 border-b border-border flex items-center justify-between">
+      <div>
+        <div id="damage-modal-title" class="font-semibold">Add Damaged Product</div>
+        <div class="text-xs text-muted-foreground">Track damaged quantity separately</div>
+      </div>
+      <button type="button" class="close-damage-modal w-8 h-8 rounded hover:bg-muted inline-flex items-center justify-center"><i data-lucide="x" class="w-4 h-4"></i></button>
+    </div>
+    <div class="p-5 space-y-4 overflow-y-auto modal-scroll">
+      <div class="relative">
+        <div class="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Product</div>
+        <input id="damage-product-search" class="form-input" placeholder="Search product" autocomplete="off" required>
+        <div id="damage-product-results" class="hidden absolute z-30 mt-1 w-full overflow-hidden rounded-md border border-border bg-card shadow-xl"></div>
+      </div>
+      <label>
+        <div class="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Damaged Quantity</div>
+        <input id="damage-quantity" name="damaged_quantity" type="number" min="0.001" step="0.001" class="form-input" required>
+      </label>
+      <label>
+        <div class="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Note</div>
+        <textarea id="damage-note" name="note" rows="3" class="form-input" placeholder="Optional"></textarea>
+      </label>
+      <div class="flex justify-end gap-2 pt-2 border-t border-border">
+        <button type="button" class="close-damage-modal h-9 px-4 rounded-md border border-border text-sm hover:bg-muted">Cancel</button>
+        <button class="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium">Save</button>
+      </div>
+    </div>
+  </form>
+</div>
+
+<div id="damage-delete-modal" class="hidden fixed inset-0 z-50 bg-black/55 backdrop-blur-sm items-center justify-center p-4">
+  <form method="post" class="w-full max-w-md modal-surface border border-border rounded-xl shadow-2xl overflow-hidden">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="delete_damaged_product">
+    <input type="hidden" name="damage_id" id="delete-damage-id">
+    <div class="p-5 space-y-4">
+      <div>
+        <div class="font-semibold">Are you sure to delete?</div>
+        <div class="text-sm text-muted-foreground mt-1">This damaged record for <span id="delete-damage-product" class="font-medium text-foreground"></span> will be removed.</div>
+      </div>
+      <div class="flex justify-end gap-2 pt-2 border-t border-border">
+        <button type="button" id="cancel-damage-delete" class="h-9 px-4 rounded-md border border-border text-sm hover:bg-muted">Cancel</button>
+        <button class="h-9 px-4 rounded-md bg-destructive text-destructive-foreground text-sm font-medium">OK</button>
+      </div>
+    </div>
+  </form>
+</div>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+  const damageProducts = {{ product_options_json|safe }};
+  const escapeHtml = (value) => String(value || "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[char]));
+  const damageModal = document.getElementById("damage-modal");
+  const deleteModal = document.getElementById("damage-delete-modal");
+  const productSearch = document.getElementById("damage-product-search");
+  const productResults = document.getElementById("damage-product-results");
+  const productId = document.getElementById("damage-product-id");
+  const openDamageModal = () => { damageModal.classList.remove("hidden"); damageModal.classList.add("flex"); };
+  const closeDamageModal = () => { damageModal.classList.add("hidden"); damageModal.classList.remove("flex"); };
+  const openDeleteModal = () => { deleteModal.classList.remove("hidden"); deleteModal.classList.add("flex"); };
+  const closeDeleteModal = () => { deleteModal.classList.add("hidden"); deleteModal.classList.remove("flex"); };
+  const setDamageProduct = (product) => {
+    productId.value = product.id;
+    productSearch.value = product.label;
+    productResults.classList.add("hidden");
+  };
+  const renderProductResults = () => {
+    const term = productSearch.value.trim().toLowerCase();
+    productId.value = "";
+    if (!term) {
+      productResults.classList.add("hidden");
+      productResults.innerHTML = "";
+      return;
+    }
+    const matches = damageProducts.filter((product) => `${product.label} ${product.sku} ${product.path}`.toLowerCase().includes(term)).slice(0, 12);
+    productResults.innerHTML = matches.length ? matches.map((product, index) => `
+      <button type="button" class="damage-product-option w-full text-left px-3 py-2 hover:bg-muted border-t border-border first:border-t-0" data-index="${index}">
+        <span class="text-sm font-medium">${escapeHtml(product.label)}</span>
+        <span class="block text-[11px] text-muted-foreground truncate">SKU ${escapeHtml(product.sku)} - ${escapeHtml(product.path)}</span>
+      </button>
+    `).join("") : `<div class="px-3 py-2 text-sm text-muted-foreground">No product found</div>`;
+    productResults.querySelectorAll(".damage-product-option").forEach((button) => button.addEventListener("click", () => setDamageProduct(matches[Number(button.dataset.index)])));
+    productResults.classList.remove("hidden");
+  };
+  productSearch?.addEventListener("input", renderProductResults);
+  document.getElementById("open-damage-modal")?.addEventListener("click", () => {
+    document.getElementById("damage-action").value = "create_damaged_product";
+    document.getElementById("damage-modal-title").textContent = "Add Damaged Product";
+    document.getElementById("damage-id").value = "";
+    productId.value = "";
+    productSearch.value = "";
+    document.getElementById("damage-quantity").value = "";
+    document.getElementById("damage-note").value = "";
+    openDamageModal();
+  });
+  document.querySelectorAll(".open-damage-edit").forEach((button) => button.addEventListener("click", () => {
+    document.getElementById("damage-action").value = "update_damaged_product";
+    document.getElementById("damage-modal-title").textContent = "Edit Damaged Product";
+    document.getElementById("damage-id").value = button.dataset.id;
+    productId.value = button.dataset.productId;
+    productSearch.value = button.dataset.productLabel;
+    document.getElementById("damage-quantity").value = button.dataset.quantity;
+    document.getElementById("damage-note").value = button.dataset.note || "";
+    openDamageModal();
+  }));
+  document.querySelectorAll(".open-damage-delete").forEach((button) => button.addEventListener("click", () => {
+    document.getElementById("delete-damage-id").value = button.dataset.id;
+    document.getElementById("delete-damage-product").textContent = button.dataset.product;
+    openDeleteModal();
+  }));
+  document.querySelectorAll(".close-damage-modal").forEach((button) => button.addEventListener("click", closeDamageModal));
+  document.getElementById("cancel-damage-delete")?.addEventListener("click", closeDeleteModal);
+  damageModal?.addEventListener("click", (event) => { if (event.target === damageModal) closeDamageModal(); });
+  deleteModal?.addEventListener("click", (event) => { if (event.target === deleteModal) closeDeleteModal(); });
+  lucide.createIcons();
+</script>
+{% endblock %}

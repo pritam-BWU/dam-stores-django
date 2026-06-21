@@ -1,0 +1,107 @@
+{% extends "stock_management/components/app_shell.html" %}
+
+{% block content %}
+<div class="space-y-5">
+  <div class="bg-card border border-border rounded-xl p-3 flex flex-col md:flex-row gap-2">
+    <div class="flex items-center gap-2 flex-1 px-3 h-9 rounded-md border border-border bg-background">
+      <i data-lucide="search" class="w-4 h-4 text-muted-foreground"></i>
+      <input id="history-search" placeholder="Search user, operation, product..." class="flex-1 bg-transparent outline-none text-sm">
+    </div>
+    <div class="flex gap-1 overflow-x-auto">
+      {% for type in types %}
+        <button class="px-3 h-9 rounded-md text-xs whitespace-nowrap {% if forloop.first %}bg-primary text-primary-foreground{% else %}border border-border hover:bg-muted{% endif %}">{{ type }}</button>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="bg-card border border-border rounded-xl overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-muted/40 text-muted-foreground text-xs">
+          <tr>
+            <th class="text-left font-medium px-4 py-3">Date Time</th>
+            <th class="text-left font-medium px-4 py-3">User</th>
+            <th class="text-left font-medium px-4 py-3">Operation</th>
+            <th class="text-left font-medium px-4 py-3">Object</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for audit in audits %}
+            <tr data-history-row data-detail-id="{{ audit.detail_script_id }}" data-text="{{ audit.user.username }} {{ audit.action }} {{ audit.model_name }} {{ audit.object_label }} {{ audit.old_data_display }} {{ audit.new_data_display }}" class="border-t border-border hover:bg-muted/30 cursor-pointer">
+              <td class="px-4 py-3 min-w-[160px] text-xs text-muted-foreground">{{ audit.created_at|date:"M d, Y h:i A" }}</td>
+              <td class="px-4 py-3">
+                <div class="font-medium">{{ audit.user_label }}</div>
+                <div class="text-xs text-muted-foreground">{{ audit.ip_address|default:"-" }}</div>
+              </td>
+              <td class="px-4 py-3"><span class="badge badge-default">{{ audit.action }}</span></td>
+              <td class="px-4 py-3">
+                <div class="font-medium">{{ audit.object_label }}</div>
+                <div class="text-xs text-muted-foreground">{{ audit.model_name }} #{{ audit.object_id }}</div>
+              </td>
+            </tr>
+            {{ audit.detail_payload|json_script:audit.detail_script_id }}
+          {% empty %}
+            <tr><td colspan="4" class="px-4 py-10 text-center text-sm text-muted-foreground">No audit history yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="history-detail-modal" class="hidden fixed inset-0 z-50 bg-black/45 p-4 flex items-center justify-center">
+    <div class="w-full max-w-xl rounded-xl border border-border shadow-2xl" style="background: rgb(var(--card)); color: rgb(var(--foreground));">
+      <div class="px-4 py-3 border-b border-border flex items-center justify-between gap-3">
+        <div>
+          <div class="font-semibold text-sm">History Detail</div>
+          <div id="history-detail-date" class="text-[11px] text-muted-foreground"></div>
+        </div>
+        <button id="history-detail-close" class="h-8 w-8 rounded-md border border-border inline-flex items-center justify-center hover:bg-muted" type="button" aria-label="Close">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+      <div class="p-4 space-y-3 text-sm">
+        <div class="grid grid-cols-3 gap-3"><div class="text-muted-foreground">User</div><div id="history-detail-user" class="col-span-2 font-medium"></div></div>
+        <div class="grid grid-cols-3 gap-3"><div class="text-muted-foreground">Operation</div><div id="history-detail-operation" class="col-span-2"></div></div>
+        <div class="grid grid-cols-3 gap-3"><div class="text-muted-foreground">Object</div><div id="history-detail-object" class="col-span-2"></div></div>
+        <div>
+          <div class="text-muted-foreground mb-1">Change</div>
+          <div id="history-detail-change" class="rounded-md border border-border bg-background p-3 text-sm leading-6 max-h-48 overflow-y-auto whitespace-pre-line"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+  const setHistoryText = (id, value) => {
+    const element = document.getElementById(id);
+    if (element) element.textContent = value || "-";
+  };
+  const historyModal = document.getElementById("history-detail-modal");
+  const closeHistoryModal = () => historyModal?.classList.add("hidden");
+  document.getElementById("history-search")?.addEventListener("input", (event) => {
+    const term = event.target.value.toLowerCase();
+    document.querySelectorAll("[data-history-row]").forEach((row) => row.classList.toggle("hidden", !row.dataset.text.toLowerCase().includes(term)));
+  });
+  document.querySelectorAll("[data-history-row]").forEach((row) => {
+    row.addEventListener("click", () => {
+      const payload = JSON.parse(document.getElementById(row.dataset.detailId)?.textContent || "{}");
+      setHistoryText("history-detail-date", payload.date);
+      setHistoryText("history-detail-user", payload.user);
+      setHistoryText("history-detail-operation", payload.operation);
+      setHistoryText("history-detail-object", `${payload.object || "-"} (${payload.model || "-"})`);
+      setHistoryText("history-detail-change", payload.change);
+      historyModal?.classList.remove("hidden");
+    });
+  });
+  document.getElementById("history-detail-close")?.addEventListener("click", closeHistoryModal);
+  historyModal?.addEventListener("click", (event) => {
+    if (event.target === historyModal) closeHistoryModal();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeHistoryModal();
+  });
+</script>
+{% endblock %}

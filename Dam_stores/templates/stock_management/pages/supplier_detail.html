@@ -1,0 +1,123 @@
+{% extends "stock_management/components/app_shell.html" %}
+
+{% block content %}
+<div class="space-y-5">
+  {% if messages %}
+    <div class="space-y-2">
+      {% for message in messages %}
+        <div class="rounded-md border border-border bg-card px-4 py-3 text-sm">{{ message }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <div class="grid grid-cols-2 gap-3 sm:gap-4">
+    <div class="bg-card border border-border rounded-xl p-4 sm:p-5">
+      <div class="text-xs sm:text-sm text-muted-foreground">Total Outstanding</div>
+      <div class="text-xl sm:text-2xl font-semibold mt-1 truncate">{{ total_outstanding }}</div>
+    </div>
+    <div class="bg-card border border-border rounded-xl p-4 sm:p-5">
+      <div class="text-xs sm:text-sm text-muted-foreground">Total Paid</div>
+      <div class="text-xl sm:text-2xl font-semibold mt-1 truncate text-success">{{ total_paid }}</div>
+    </div>
+  </div>
+
+  <div class="bg-card border border-border rounded-xl p-4 sm:p-5 space-y-4">
+    <form method="get" class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2 items-end">
+      <label class="block min-w-0">
+        <div class="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">From</div>
+        <input name="start" type="date" class="form-input h-9 w-full" value="{{ filter_start|date:'Y-m-d' }}">
+      </label>
+      <label class="block min-w-0">
+        <div class="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">To</div>
+        <input name="end" type="date" class="form-input h-9 w-full" value="{{ filter_end|date:'Y-m-d' }}">
+      </label>
+      <button type="submit" class="h-9 px-4 rounded-md bg-sky-700 text-white text-sm font-medium hover:bg-sky-600 shrink-0">Search</button>
+    </form>
+  </div>
+
+  <div class="bg-card border border-border rounded-xl overflow-hidden">
+
+    {# Desktop table #}
+    <div class="hidden md:block overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-muted/40 text-muted-foreground text-xs">
+          <tr>
+            <th class="text-left font-medium px-4 py-3 w-1/3">Date</th>
+            <th class="text-right font-medium px-4 py-3 w-1/3">Outstanding</th>
+            <th class="text-right font-medium px-4 py-3 w-1/3">Paid</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in transaction_page.object_list %}
+            <tr class="border-t border-border hover:bg-muted/30">
+              <td class="px-4 py-3 font-medium">{{ row.transaction_date|date:"Y-m-d" }}</td>
+              <td class="px-4 py-3 text-right font-semibold">Rs {{ row.outstanding_amount }}</td>
+              <td class="px-4 py-3 text-right text-success font-semibold">Rs {{ row.paid_amount }}</td>
+            </tr>
+          {% empty %}
+            <tr>
+              <td colspan="3" class="px-4 py-12 text-center text-sm text-muted-foreground">No supplier transactions found.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {# Mobile table #}
+    <div class="md:hidden">
+      <table class="w-full text-sm">
+        <thead class="bg-muted/40 text-muted-foreground text-xs">
+          <tr>
+            <th class="text-left font-medium px-3 py-2.5">Date</th>
+            <th class="text-right font-medium px-3 py-2.5 border-l border-border">Due</th>
+            <th class="text-right font-medium px-3 py-2.5 border-l border-border">Paid</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in transaction_page.object_list %}
+            <tr class="border-t border-border">
+              <td class="px-3 py-3 font-medium text-xs">{{ row.transaction_date|date:"d/m/Y" }}</td>
+              <td class="px-3 py-3 text-right font-semibold text-xs border-l border-border">{{ row.outstanding_amount }}</td>
+              <td class="px-3 py-3 text-right text-success font-semibold text-xs border-l border-border">{{ row.paid_amount }}</td>
+            </tr>
+          {% empty %}
+            <tr>
+              <td colspan="3" class="px-4 py-12 text-center text-sm text-muted-foreground">No transactions found.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if transaction_page.paginator.count %}
+      <div class="border-t border-border px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-sm">
+        <div class="text-muted-foreground text-xs">
+          Showing {{ transaction_page.start_index }}–{{ transaction_page.end_index }} of {{ transaction_page.paginator.count }}
+        </div>
+        <div class="flex items-center gap-2">
+          {% if transaction_page.has_previous %}
+            <a class="h-8 px-3 rounded-md border border-border inline-flex items-center justify-center hover:bg-muted text-sm"
+               href="?start={{ filter_start|date:'Y-m-d' }}&end={{ filter_end|date:'Y-m-d' }}&page={{ transaction_page.previous_page_number }}">Previous</a>
+          {% else %}
+            <span class="h-8 px-3 rounded-md border border-border inline-flex items-center justify-center text-muted-foreground opacity-50 text-sm">Previous</span>
+          {% endif %}
+          <span class="text-xs text-muted-foreground">Page {{ transaction_page.number }} of {{ transaction_page.paginator.num_pages }}</span>
+          {% if transaction_page.has_next %}
+            <a class="h-8 px-3 rounded-md border border-border inline-flex items-center justify-center hover:bg-muted text-sm"
+               href="?start={{ filter_start|date:'Y-m-d' }}&end={{ filter_end|date:'Y-m-d' }}&page={{ transaction_page.next_page_number }}">Next</a>
+          {% else %}
+            <span class="h-8 px-3 rounded-md border border-border inline-flex items-center justify-center text-muted-foreground opacity-50 text-sm">Next</span>
+          {% endif %}
+        </div>
+      </div>
+    {% endif %}
+
+  </div>
+</div>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+  lucide.createIcons();
+</script>
+{% endblock %}

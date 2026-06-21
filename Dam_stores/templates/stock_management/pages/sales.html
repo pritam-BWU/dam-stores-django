@@ -1,0 +1,163 @@
+{% extends "stock_management/components/app_shell.html" %}
+
+{% block content %}
+<div class="space-y-5">
+  {% if messages %}
+    <div class="space-y-2">
+      {% for message in messages %}
+        <div class="rounded-md border border-border bg-card px-4 py-3 text-sm">{{ message }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <div class="flex justify-end">
+    <button id="open-sales-modal" class="inline-flex items-center gap-2 h-9 px-4 rounded-md text-sm font-medium bg-primary text-primary-foreground hover:opacity-90">
+      <i data-lucide="plus" class="w-4 h-4"></i>
+      Add Sales Data
+    </button>
+  </div>
+
+  <div class="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
+    {% include "stock_management/components/stat_card.html" with label="Yearly Revenue" value=yearly_revenue icon="trending-up" tone_class="bg-primary/10 text-primary" %}
+    {% include "stock_management/components/stat_card.html" with label="Monthly Revenue" value=monthly_revenue icon="calendar-days" tone_class="bg-sky-500/10 text-sky-600" %}
+    {% include "stock_management/components/stat_card.html" with label="Yearly Profit" value=yearly_profit icon="wallet" tone_class="bg-emerald-500/10 text-emerald-600" %}
+    {% include "stock_management/components/stat_card.html" with label="Weekly Profit" value=weekly_profit icon="badge-indian-rupee" tone_class="bg-amber-500/10 text-amber-600" %}
+  </div>
+
+  <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+    <div class="xl:col-span-2 bg-card border border-border rounded-xl p-5">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+        <h3 class="font-semibold text-sm">Daily Revenue & Profit</h3>
+        <form method="get" class="grid grid-cols-2 sm:flex sm:flex-wrap items-end gap-2">
+          <label>
+            <div class="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">From</div>
+            <input name="start" type="date" class="form-input h-9" value="{{ filter_start|date:'Y-m-d' }}">
+          </label>
+          <label>
+            <div class="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">To</div>
+            <input name="end" type="date" class="form-input h-9" value="{{ filter_end|date:'Y-m-d' }}">
+          </label>
+          <button class="h-9 px-3 rounded-md border border-border text-sm hover:bg-muted">Apply</button>
+        </form>
+      </div>
+      <div class="h-64 sm:h-72">
+        <canvas id="dailyChart"></canvas>
+      </div>
+    </div>
+
+    <div class="bg-card border border-border rounded-xl p-5">
+      <h3 class="font-semibold text-sm mb-3">Filtered Calculation</h3>
+      <div class="space-y-3 text-sm">
+        <div class="flex justify-between"><span class="text-muted-foreground">Total Amount</span><span class="font-medium">{{ filtered_revenue }}</span></div>
+        <div class="flex justify-between"><span class="text-muted-foreground">Net Profit</span><span class="font-medium text-success">{{ filtered_profit }}</span></div>
+        <div class="flex justify-between"><span class="text-muted-foreground">Gross / Cost</span><span class="font-medium">{{ filtered_gross }}</span></div>
+        <div class="border-t border-border pt-3 flex justify-between"><span class="text-muted-foreground">Profit Margin</span><span class="font-semibold">{{ filtered_margin }}</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bg-card border border-border rounded-xl p-5">
+    <h3 class="font-semibold text-sm mb-3">Monthly Revenue vs Profit</h3>
+    <div class="h-64 sm:h-72">
+      <canvas id="salesChart"></canvas>
+    </div>
+  </div>
+</div>
+
+<div id="sales-modal" class="hidden fixed inset-0 z-50 bg-black/55 backdrop-blur-sm items-start justify-center overflow-y-auto p-4 sm:py-[10vh]">
+  <form method="post" class="w-full max-w-5xl modal-surface border border-border rounded-xl shadow-2xl overflow-hidden">
+    {% csrf_token %}
+    <div class="h-14 px-5 border-b border-border flex items-center justify-between">
+      <div>
+        <div class="font-semibold">Add Sales Data</div>
+        <div class="text-xs text-muted-foreground">Each date can be added only once</div>
+      </div>
+      <button type="button" id="close-sales-modal" class="w-8 h-8 rounded hover:bg-muted inline-flex items-center justify-center"><i data-lucide="x" class="w-4 h-4"></i></button>
+    </div>
+    <div class="p-5 space-y-4">
+      <div id="sales-row-list" class="space-y-3"></div>
+      <button type="button" id="add-sales-row" class="inline-flex items-center gap-2 h-9 px-3 rounded-md border border-border text-sm hover:bg-muted">
+        <i data-lucide="plus" class="w-4 h-4"></i>
+        Add Row
+      </button>
+      <div class="flex justify-end gap-2 pt-2 border-t border-border">
+        <button type="button" id="cancel-sales-modal" class="h-9 px-4 rounded-md border border-border text-sm hover:bg-muted">Cancel</button>
+        <button class="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium">Save Sales Data</button>
+      </div>
+    </div>
+  </form>
+</div>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+  const modal = document.getElementById("sales-modal");
+  const openModal = () => { modal.classList.remove("hidden"); modal.classList.add("flex"); };
+  const closeModal = () => { modal.classList.add("hidden"); modal.classList.remove("flex"); };
+  document.getElementById("open-sales-modal")?.addEventListener("click", openModal);
+  document.getElementById("close-sales-modal")?.addEventListener("click", closeModal);
+  document.getElementById("cancel-sales-modal")?.addEventListener("click", closeModal);
+  modal?.addEventListener("click", (event) => { if (event.target === modal) closeModal(); });
+  const salesRowList = document.getElementById("sales-row-list");
+  const salesRowHtml = () => `
+    <div class="sales-row grid grid-cols-1 md:grid-cols-[1fr_1fr_1fr_1fr_auto] gap-3 items-end rounded-lg border border-border p-3">
+      <label>
+        <div class="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Date</div>
+        <input name="sales_date" type="date" class="form-input" required>
+      </label>
+      <label>
+        <div class="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Total Amount</div>
+        <input name="total_amount" type="number" step="0.01" min="0" class="form-input" placeholder="Total amount" required>
+      </label>
+      <label>
+        <div class="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Net Profit</div>
+        <input name="net_profit" type="number" step="0.01" min="0" class="form-input" placeholder="Net profit" required>
+      </label>
+      <label>
+        <div class="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Note</div>
+        <input name="note" class="form-input" placeholder="Optional note">
+      </label>
+      <button type="button" class="remove-sales-row h-10 w-10 rounded-md border border-border text-destructive hover:bg-destructive/10 inline-flex items-center justify-center" title="Remove row">
+        <i data-lucide="x" class="w-4 h-4"></i>
+      </button>
+    </div>
+  `;
+  const syncSalesRemoveButtons = () => {
+    const rows = salesRowList?.querySelectorAll(".sales-row") || [];
+    rows.forEach((row) => row.querySelector(".remove-sales-row").disabled = rows.length <= 1);
+  };
+  const addSalesRow = () => {
+    salesRowList.insertAdjacentHTML("beforeend", salesRowHtml());
+    syncSalesRemoveButtons();
+    lucide.createIcons();
+  };
+  document.getElementById("add-sales-row")?.addEventListener("click", addSalesRow);
+  salesRowList?.addEventListener("click", (event) => {
+    const button = event.target.closest(".remove-sales-row");
+    if (!button) return;
+    const rows = salesRowList.querySelectorAll(".sales-row");
+    if (rows.length > 1) button.closest(".sales-row").remove();
+    syncSalesRemoveButtons();
+  });
+  addSalesRow();
+
+  const monthlySales = {{ monthly_sales_json|safe }};
+  const dailyRevenue = {{ daily_revenue_json|safe }};
+  new Chart(document.getElementById("salesChart"), {
+    type: "bar",
+    data: { labels: monthlySales.map(x => x.month), datasets: [
+      { label: "Revenue", data: monthlySales.map(x => x.revenue), backgroundColor: "#2563eb", borderRadius: 4 },
+      { label: "Profit", data: monthlySales.map(x => x.profit), backgroundColor: "#10b981", borderRadius: 4 }
+    ]},
+    options: { responsive: true, maintainAspectRatio: false, scales: { x: { ticks: { maxTicksLimit: window.matchMedia("(max-width: 640px)").matches ? 6 : 12 } }, y: { ticks: { maxTicksLimit: 5, callback: v => "Rs " + Number(v).toLocaleString() } } } }
+  });
+  new Chart(document.getElementById("dailyChart"), {
+    type: "line",
+    data: { labels: dailyRevenue.map(x => x.date), datasets: [
+      { label: "Revenue", data: dailyRevenue.map(x => x.revenue), borderColor: "#2563eb", backgroundColor: "rgb(37 99 235 / .14)", fill: true, tension: .35 },
+      { label: "Profit", data: dailyRevenue.map(x => x.profit), borderColor: "#10b981", backgroundColor: "rgb(16 185 129 / .14)", fill: true, tension: .35 }
+    ]},
+    options: { responsive: true, maintainAspectRatio: false, scales: { x: { ticks: { maxTicksLimit: window.matchMedia("(max-width: 640px)").matches ? 5 : 10 } }, y: { ticks: { maxTicksLimit: 5, callback: v => "Rs " + Number(v).toLocaleString() } } } }
+  });
+</script>
+{% endblock %}

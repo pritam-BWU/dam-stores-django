@@ -1,0 +1,12 @@
+<div class="bg-card border border-border rounded-xl p-4 sm:p-5">
+  <div class="flex items-start justify-between gap-3">
+    <div class="min-w-0">
+      <div class="text-xs sm:text-sm text-muted-foreground font-medium">{{ label }}</div>
+      <div class="text-xl sm:text-2xl font-semibold tracking-tight mt-1 truncate">{{ value }}</div>
+      {% if delta %}<div class="text-xs text-muted-foreground mt-1">{{ delta }}</div>{% endif %}
+    </div>
+    <div class="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 {{ tone_class }}" {% if tone_style %}style="{{ tone_style }}"{% endif %}>
+      <i data-lucide="{{ icon }}" class="w-5 h-5"></i>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,182 @@
+{% extends "stock_management/components/app_shell.html" %}
+
+{% block content %}
+<div class="space-y-5">
+  {% if messages %}
+    <div class="space-y-2">
+      {% for message in messages %}
+        <div class="rounded-md border border-border bg-card px-4 py-3 text-sm">{{ message }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <div class="bg-card border border-border rounded-xl p-3">
+    <form method="get" class="flex items-end gap-2 overflow-x-auto pb-1">
+      <label class="shrink-0">
+        <div class="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Date</div>
+        <input name="date" type="date" class="form-input h-9 w-36 sm:w-40" value="{{ single_date|date:'Y-m-d' }}">
+      </label>
+      <label class="shrink-0">
+        <div class="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">From</div>
+        <input name="start" type="date" class="form-input h-9 w-36 sm:w-40" value="{{ filter_start|date:'Y-m-d' }}">
+      </label>
+      <label class="shrink-0">
+        <div class="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">To</div>
+        <input name="end" type="date" class="form-input h-9 w-36 sm:w-40" value="{{ filter_end|date:'Y-m-d' }}">
+      </label>
+      <button class="h-9 px-3 rounded-md bg-primary text-primary-foreground text-sm font-medium">Search</button>
+      <a href="/sales/all/" class="h-9 px-3 rounded-md border border-border text-sm hover:bg-muted inline-flex items-center justify-center">Reset</a>
+    </form>
+  </div>
+
+  <div class="bg-card border border-border rounded-xl overflow-hidden">
+    <div class="px-4 py-3 border-b border-border font-semibold text-sm">Sales Data Records</div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-muted/40 text-muted-foreground text-xs">
+          <tr>
+            <th class="text-left font-medium px-4 py-3">Date</th>
+            <th class="text-right font-medium px-4 py-3">Total Amount</th>
+            <th class="text-right font-medium px-4 py-3">Net Profit</th>
+            <th class="text-right font-medium px-4 py-3">Gross / Cost</th>
+            <th class="text-right font-medium px-4 py-3">Margin</th>
+            <th class="text-left font-medium px-4 py-3 hidden md:table-cell">Updated By</th>
+            <th class="text-right font-medium px-4 py-3">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in sales_records %}
+            <tr class="border-t border-border hover:bg-muted/30">
+              <td class="px-4 py-3 font-medium">{{ row.sales_date|date:"Y-m-d" }}</td>
+              <td class="px-4 py-3 text-right">{{ row.total_label }}</td>
+              <td class="px-4 py-3 text-right text-success">{{ row.profit_label }}</td>
+              <td class="px-4 py-3 text-right">{{ row.gross_label }}</td>
+              <td class="px-4 py-3 text-right">{{ row.margin_label }}</td>
+              <td class="px-4 py-3 hidden md:table-cell text-muted-foreground">{{ row.updated_by.name|default:row.updated_by.username }}</td>
+              <td class="px-4 py-3 text-right">
+                <div class="inline-flex items-center gap-1">
+                  <button type="button" class="open-sales-edit w-8 h-8 rounded hover:bg-muted inline-flex items-center justify-center"
+                    data-id="{{ row.id }}"
+                    data-version="{{ row.version }}"
+                    data-date="{{ row.sales_date|date:'Y-m-d' }}"
+                    data-total="{{ row.total_amount }}"
+                    data-profit="{{ row.net_profit }}"
+                    data-note="{{ row.note|default:'' }}"
+                    title="Edit sales data">
+                    <i data-lucide="edit-3" class="w-4 h-4"></i>
+                  </button>
+                  <button type="button" class="open-sales-delete w-8 h-8 rounded hover:bg-destructive/10 text-destructive inline-flex items-center justify-center"
+                    data-id="{{ row.id }}"
+                    data-version="{{ row.version }}"
+                    data-date="{{ row.sales_date|date:'Y-m-d' }}"
+                    title="Delete sales data">
+                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                  </button>
+                </div>
+              </td>
+            </tr>
+          {% empty %}
+            <tr>
+              <td colspan="7" class="px-4 py-12 text-center text-sm text-muted-foreground">No sales data found for this search.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div id="sales-edit-modal" class="hidden fixed inset-0 z-50 bg-black/55 backdrop-blur-sm items-start justify-center overflow-y-auto p-4 sm:py-[10vh]">
+  <form method="post" class="w-full max-w-xl modal-surface border border-border rounded-xl shadow-2xl overflow-hidden">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="update_sales_record">
+    <input type="hidden" name="record_id" id="edit-record-id">
+    <input type="hidden" name="version" id="edit-record-version">
+    <div class="h-14 px-5 border-b border-border flex items-center justify-between">
+      <div>
+        <div class="font-semibold">Edit Sales Data</div>
+        <div class="text-xs text-muted-foreground">Update the saved record for this date</div>
+      </div>
+      <button type="button" id="close-sales-edit" class="w-8 h-8 rounded hover:bg-muted inline-flex items-center justify-center"><i data-lucide="x" class="w-4 h-4"></i></button>
+    </div>
+    <div class="p-5 space-y-4">
+      <label>
+        <div class="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Date</div>
+        <input id="edit-sales-date" name="sales_date" type="date" class="form-input" required>
+      </label>
+      <label>
+        <div class="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Total Amount</div>
+        <input id="edit-total-amount" name="total_amount" type="number" step="0.01" min="0" class="form-input" required>
+      </label>
+      <label>
+        <div class="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Net Profit</div>
+        <input id="edit-net-profit" name="net_profit" type="number" step="0.01" min="0" class="form-input" required>
+      </label>
+      <label>
+        <div class="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Note</div>
+        <input id="edit-note" name="note" class="form-input" placeholder="Optional">
+      </label>
+      <div class="flex justify-end gap-2 pt-2 border-t border-border">
+        <button type="button" id="cancel-sales-edit" class="h-9 px-4 rounded-md border border-border text-sm hover:bg-muted">Cancel</button>
+        <button class="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium">Update Sales Data</button>
+      </div>
+    </div>
+  </form>
+</div>
+
+<div id="sales-delete-modal" class="hidden fixed inset-0 z-50 bg-black/55 backdrop-blur-sm items-center justify-center p-4">
+  <form method="post" class="w-full max-w-md modal-surface border border-border rounded-xl shadow-2xl overflow-hidden">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="delete_sales_record">
+    <input type="hidden" name="record_id" id="delete-record-id">
+    <input type="hidden" name="version" id="delete-record-version">
+    <div class="p-5 space-y-4">
+      <div>
+        <div class="font-semibold">Are you sure to delete?</div>
+        <div class="text-sm text-muted-foreground mt-1">Sales data for <span id="delete-record-date" class="font-medium text-foreground"></span> will be removed.</div>
+      </div>
+      <div class="flex justify-end gap-2 pt-2 border-t border-border">
+        <button type="button" id="cancel-sales-delete" class="h-9 px-4 rounded-md border border-border text-sm hover:bg-muted">Cancel</button>
+        <button class="h-9 px-4 rounded-md bg-destructive text-destructive-foreground text-sm font-medium">OK</button>
+      </div>
+    </div>
+  </form>
+</div>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+  const editModal = document.getElementById("sales-edit-modal");
+  const deleteModal = document.getElementById("sales-delete-modal");
+  const openEditModal = () => { editModal.classList.remove("hidden"); editModal.classList.add("flex"); };
+  const closeEditModal = () => { editModal.classList.add("hidden"); editModal.classList.remove("flex"); };
+  const openDeleteModal = () => { deleteModal.classList.remove("hidden"); deleteModal.classList.add("flex"); };
+  const closeDeleteModal = () => { deleteModal.classList.add("hidden"); deleteModal.classList.remove("flex"); };
+
+  document.querySelectorAll(".open-sales-edit").forEach((button) => {
+    button.addEventListener("click", () => {
+      document.getElementById("edit-record-id").value = button.dataset.id;
+      document.getElementById("edit-record-version").value = button.dataset.version;
+      document.getElementById("edit-sales-date").value = button.dataset.date;
+      document.getElementById("edit-total-amount").value = button.dataset.total;
+      document.getElementById("edit-net-profit").value = button.dataset.profit;
+      document.getElementById("edit-note").value = button.dataset.note || "";
+      openEditModal();
+    });
+  });
+  document.querySelectorAll(".open-sales-delete").forEach((button) => {
+    button.addEventListener("click", () => {
+      document.getElementById("delete-record-id").value = button.dataset.id;
+      document.getElementById("delete-record-version").value = button.dataset.version;
+      document.getElementById("delete-record-date").textContent = button.dataset.date;
+      openDeleteModal();
+    });
+  });
+  document.getElementById("close-sales-edit")?.addEventListener("click", closeEditModal);
+  document.getElementById("cancel-sales-edit")?.addEventListener("click", closeEditModal);
+  document.getElementById("cancel-sales-delete")?.addEventListener("click", closeDeleteModal);
+  editModal?.addEventListener("click", (event) => { if (event.target === editModal) closeEditModal(); });
+  deleteModal?.addEventListener("click", (event) => { if (event.target === deleteModal) closeDeleteModal(); });
+  lucide.createIcons();
+</script>
+{% endblock %}

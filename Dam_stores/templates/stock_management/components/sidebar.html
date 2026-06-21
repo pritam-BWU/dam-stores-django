@@ -1,0 +1,39 @@
+<aside id="sidebar" class="fixed lg:sticky lg:top-0 z-[70] lg:z-40 inset-y-0 left-0 w-56 lg:w-64 h-screen bg-sidebar text-sidebar-foreground border-r border-sidebar-border transform transition-transform -translate-x-full lg:translate-x-0 flex flex-col shadow-2xl lg:shadow-none" style="background: rgb(var(--sidebar)); color: rgb(var(--sidebar-foreground));">
+  <div class="sidebar-shell-header h-16 shrink-0 flex items-center gap-2 px-5 border-b border-sidebar-border">
+    <div class="sidebar-brand-icon w-9 h-9 rounded-lg bg-sidebar-primary text-sidebar-primary-foreground flex items-center justify-center font-bold">D</div>
+    <div class="sidebar-brand-text flex-1 min-w-0">
+      <div class="font-semibold tracking-tight">Dam Stores</div>
+    </div>
+    <button id="sidebar-collapse" class="hidden lg:inline-flex w-8 h-8 rounded-md hover:bg-sidebar-accent items-center justify-center" aria-label="collapse sidebar" type="button">
+      <i data-lucide="panel-left-close" class="sidebar-collapse-icon w-4 h-4"></i>
+    </button>
+    <button class="lg:hidden" data-close-sidebar aria-label="close"><i data-lucide="x" class="w-5 h-5"></i></button>
+  </div>
+  <nav class="scrollbar-hidden flex-1 min-h-0 overflow-y-auto py-4 px-3 space-y-5">
+    {% for group in nav_groups %}
+      <div>
+        <div class="sidebar-group-label px-2 mb-2 text-[10px] uppercase tracking-widest opacity-50 font-medium">{{ group.group }}</div>
+        <div class="space-y-0.5">
+          {% for item in group.items %}
+            <a href="{{ item.href }}" class="flex items-center gap-3 px-3 py-2 rounded-md text-sm transition {% if page_id == item.id %}sidebar-nav-active{% else %}hover:bg-sidebar-accent hover:text-sidebar-accent-foreground{% endif %}" {% if page_id == item.id %}aria-current="page"{% endif %}>
+              <i data-lucide="{{ item.icon }}" class="w-4 h-4 shrink-0"></i>
+              <span class="sidebar-label truncate">{{ item.label }}</span>
+            </a>
+          {% endfor %}
+        </div>
+      </div>
+    {% endfor %}
+  </nav>
+  <div class="shrink-0 p-3 border-t border-sidebar-border">
+    <div class="sidebar-user-box flex items-center gap-2 p-2 rounded-md bg-sidebar-accent/40">
+      <div class="sidebar-user-avatar w-8 h-8 rounded-full bg-sidebar-primary text-sidebar-primary-foreground flex items-center justify-center text-xs font-semibold">{{ request.user.name|default:request.user.username|slice:":2"|upper }}</div>
+      <div class="sidebar-user-meta flex-1 min-w-0">
+        <div class="text-sm truncate">{{ request.user.name|default:request.user.username }}</div>
+        <div class="text-[10px] opacity-60">{{ request.user.role.name|default:"User" }}</div>
+      </div>
+      <a href="/logout/" class="w-8 h-8 rounded hover:bg-sidebar-accent flex items-center justify-center" title="Logout">
+        <i data-lucide="log-out" class="w-4 h-4"></i>
+      </a>
+    </div>
+  </div>
+</aside>

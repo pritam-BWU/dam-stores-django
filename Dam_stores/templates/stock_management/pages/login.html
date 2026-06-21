@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Login - Dam Stores</title>
+    <script>
+      window.tailwind = window.tailwind || {};
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              background: "rgb(5 14 25 / <alpha-value>)",
+              foreground: "rgb(241 247 255 / <alpha-value>)",
+              card: "rgb(10 24 42 / <alpha-value>)",
+              primary: "rgb(56 189 248 / <alpha-value>)",
+              muted: "rgb(15 36 62 / <alpha-value>)",
+              border: "rgb(47 77 112 / <alpha-value>)",
+            }
+          }
+        }
+      };
+    </script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+    <style>
+      body {
+        background:
+          radial-gradient(circle at 18% 16%, rgb(56 189 248 / 0.26), transparent 30%),
+          radial-gradient(circle at 85% 10%, rgb(37 99 235 / 0.24), transparent 28%),
+          linear-gradient(145deg, rgb(2 8 23), rgb(5 14 25) 48%, rgb(7 24 42));
+      }
+      .field {
+        width: 100%;
+        height: 42px;
+        border: 1px solid rgb(47 77 112);
+        border-radius: 8px;
+        padding: 0 12px;
+        outline: none;
+        background: rgb(4 12 24);
+        color: rgb(241 247 255);
+      }
+      .field:focus { border-color: rgb(56 189 248); box-shadow: 0 0 0 3px rgb(56 189 248 / 0.14); }
+      .field::placeholder { color: rgb(148 190 230 / 0.45); }
+    </style>
+  </head>
+  <body class="min-h-screen text-foreground">
+    <main class="min-h-screen grid lg:grid-cols-[1.1fr_.9fr]">
+
+      <!-- Desktop left panel -->
+      <section class="hidden lg:flex flex-col justify-between p-10 bg-slate-950 text-white">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-lg bg-blue-500 flex items-center justify-center font-bold text-slate-950">D</div>
+          <div class="font-semibold text-lg">Dam Stores</div>
+        </div>
+        <div class="max-w-xl">
+          <h1 class="text-5xl font-semibold tracking-tight leading-tight">Manage catalog, pricing, stock and audit trails from one place.</h1>
+        </div>
+        <div class="grid grid-cols-3 gap-3 text-sm">
+          <div class="rounded-lg border border-white/10 p-4 bg-white/5"><div class="text-2xl font-semibold">4</div><div class="text-slate-400 text-xs">Roles</div></div>
+          <div class="rounded-lg border border-white/10 p-4 bg-white/5"><div class="text-2xl font-semibold">N</div><div class="text-slate-400 text-xs">Category depth</div></div>
+          <div class="rounded-lg border border-white/10 p-4 bg-white/5"><div class="text-2xl font-semibold">100%</div><div class="text-slate-400 text-xs">Auditable</div></div>
+        </div>
+      </section>
+
+      <!-- Right panel / mobile full page -->
+      <section class="flex items-center justify-center p-5 sm:p-8">
+        <div class="w-full max-w-md rounded-xl shadow-2xl p-6 sm:p-8"
+             style="background: rgb(10 24 42); border: 1px solid rgb(47 77 112);">
+
+          <!-- Mobile-only logo (no subtitle) -->
+          <div class="lg:hidden flex items-center gap-3 mb-7">
+            <div class="w-10 h-10 rounded-lg flex items-center justify-center font-bold text-slate-950"
+                 style="background: rgb(56 189 248);">D</div>
+            <div class="font-semibold text-lg" style="color: rgb(241 247 255);">Dam Stores</div>
+          </div>
+
+          <!-- Heading -->
+          <div class="mb-6">
+            <h2 class="text-2xl font-semibold tracking-tight" style="color: rgb(56 189 248);">Sign in</h2>
+            <p class="text-sm mt-1" style="color: rgb(148 190 230 / 0.70);">Enter your account details to continue.</p>
+          </div>
+
+          {% if messages %}
+            <div class="mb-4 space-y-2">
+              {% for message in messages %}
+                <div class="text-sm rounded-md px-3 py-2"
+                     style="border: 1px solid rgb(248 113 113 / 0.30); background: rgb(239 68 68 / 0.10); color: rgb(254 202 202);">{{ message }}</div>
+              {% endfor %}
+            </div>
+          {% endif %}
+
+          <form method="post" class="space-y-5">
+            {% csrf_token %}
+            <label class="block">
+              <span class="text-xs uppercase tracking-wider font-medium" style="color: rgb(148 190 230 / 0.75);">Username</span>
+              <input class="field mt-1" name="username" autocomplete="username" required placeholder="your_username">
+            </label>
+            <label class="block">
+              <span class="text-xs uppercase tracking-wider font-medium" style="color: rgb(148 190 230 / 0.75);">Password</span>
+              <input class="field mt-1" name="password" type="password" autocomplete="current-password" required placeholder="••••••••">
+            </label>
+            <button class="w-full h-11 rounded-md font-semibold transition-opacity hover:opacity-90 active:opacity-80"
+                    style="background: rgb(56 189 248); color: rgb(2 8 23); box-shadow: 0 8px 20px rgb(56 189 248 / 0.22); font-size: 15px;"
+                    type="submit">Login</button>
+          </form>
+        </div>
+      </section>
+
+    </main>
+    <script>lucide.createIcons();</script>
+  </body>
+</html>

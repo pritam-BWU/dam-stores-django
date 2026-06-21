@@ -1,0 +1,862 @@
+{% extends "stock_management/components/app_shell.html" %}
+
+{% block content %}
+<div class="space-y-5">
+  {% if messages %}
+    <div class="space-y-2">
+      {% for message in messages %}
+        <div class="rounded-md border border-border bg-card px-4 py-3 text-sm">{{ message }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  {% if selected_segment %}
+    <div class="bg-card border border-border rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div>
+        <div class="text-xs text-muted-foreground">Showing segment</div>
+        <div class="font-semibold">{{ selected_segment.name }}</div>
+      </div>
+      <a href="/products/" class="inline-flex items-center gap-2 h-9 px-3 rounded-md border border-border text-sm hover:bg-muted">
+        <i data-lucide="list" class="w-4 h-4"></i>
+        All Products
+      </a>
+    </div>
+  {% endif %}
+
+  <div class="bg-card border border-border rounded-xl p-3 flex items-center gap-2">
+    <div class="flex items-center gap-2 flex-1">
+      <div class="flex items-center gap-2 flex-1 px-3 h-9 rounded-md border border-border bg-background">
+        <i data-lucide="search" class="w-4 h-4 text-muted-foreground"></i>
+        <input id="product-search" placeholder="Search by name, brand, SKU..." class="flex-1 bg-transparent outline-none text-sm min-w-0">
+      </div>
+      <button id="open-product-modal" class="h-9 w-9 rounded-md bg-sky-700 text-white hover:bg-sky-600 inline-flex items-center justify-center shrink-0 shadow-sm" title="Add Product" aria-label="Add Product" type="button">
+        <i data-lucide="plus" class="w-4 h-4"></i>
+      </button>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(360px,0.9fr)] gap-4">
+    <div class="bg-card border border-border rounded-xl overflow-hidden flex flex-col min-h-0">
+      <div class="overflow-auto product-list-scroll">
+        <table class="w-full text-sm">
+          <thead class="bg-muted/40 text-muted-foreground text-xs">
+            <tr>
+              <th class="text-left font-medium px-4 py-3">Product</th>
+              <th class="text-left font-medium px-4 py-3 hidden sm:table-cell">Category</th>
+              <th class="text-left font-medium px-4 py-3 hidden md:table-cell">Variants</th>
+              <th class="text-right font-medium px-4 py-3">Stock</th>
+              <th class="text-right font-medium px-4 py-3 hidden sm:table-cell">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for product in product_rows %}
+              <tr data-product-row data-product-key="{{ forloop.counter0 }}" data-page-index="{{ forloop.counter0 }}" data-category="{{ product.category }}" data-text="{{ product.name }} {{ product.brand }} {{ product.category }} {{ product.path }}" class="border-t border-border cursor-pointer hover:bg-muted/40 {% if forloop.first %}bg-primary/5{% endif %}">
+                <td class="px-4 py-3">
+                  <div class="flex items-center gap-3">
+                    <div class="w-9 h-9 rounded-md bg-primary/10 text-primary flex items-center justify-center">
+                      <i data-lucide="package" class="w-4 h-4"></i>
+                    </div>
+                    <div>
+                      <div class="font-medium">{{ product.name }}</div>
+                      <div class="text-xs text-muted-foreground">{{ product.brand }} - {{ product.path }}</div>
+                    </div>
+                  </div>
+                </td>
+                <td class="px-4 py-3 hidden sm:table-cell"><span class="badge badge-muted">{{ product.category }}</span></td>
+                <td class="px-4 py-3 hidden md:table-cell text-muted-foreground">{{ product.variants|length }}</td>
+                <td class="px-4 py-3 text-right font-medium">{{ product.stock_display }}</td>
+                <td class="px-4 py-3 text-right hidden sm:table-cell">
+                  <div class="flex justify-end gap-1">
+                    {% with first_variant=product.variants.0 %}
+                      <button type="button" class="open-edit-item w-7 h-7 rounded hover:bg-muted inline-flex items-center justify-center" data-item-id="{{ first_variant.id }}"><i data-lucide="edit-3" class="w-3.5 h-3.5"></i></button>
+                      <form method="post" class="inline js-confirm-delete" data-confirm-message="Delete this product and all its variants?">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="delete_items">
+                        {% for variant in product.variants %}
+                          <input type="hidden" name="item_ids" value="{{ variant.id }}">
+                          <input type="hidden" name="versions" value="{{ variant.version }}">
+                        {% endfor %}
+                        <button type="submit" class="w-7 h-7 rounded hover:bg-destructive/10 text-destructive inline-flex items-center justify-center" title="Delete product"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+                      </form>
+                    {% endwith %}
+                  </div>
+                </td>
+              </tr>
+            {% empty %}
+              <tr>
+                <td colspan="5" class="px-4 py-14 text-center">
+                  <div class="mx-auto w-11 h-11 rounded-lg bg-primary/10 text-primary flex items-center justify-center mb-3"><i data-lucide="package-plus" class="w-5 h-5"></i></div>
+                  <div class="font-medium">No products yet</div>
+                  <div class="text-sm text-muted-foreground mt-1">Click Add Product to enter your own sample data.</div>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div id="product-pagination" class="shrink-0 border-t border-border px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-sm">
+        <div id="product-pagination-summary" class="text-muted-foreground"></div>
+        <div class="flex items-center gap-2">
+          <button type="button" id="product-prev-page" class="h-8 px-3 rounded-md border border-border hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed">Previous</button>
+          <div id="product-page-label" class="text-xs text-muted-foreground min-w-20 text-center"></div>
+          <button type="button" id="product-next-page" class="h-8 px-3 rounded-md border border-border hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed">Next</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="product-detail-card" class="hidden lg:block fixed lg:static inset-0 lg:inset-auto z-[80] lg:z-auto bg-black/65 lg:bg-transparent p-3 lg:p-0 overflow-y-auto lg:overflow-visible">
+      <div class="border border-border rounded-xl p-5 product-detail-scroll overflow-y-auto max-h-[calc(100vh-1.5rem)] lg:max-h-none mt-3 lg:mt-0 shadow-2xl lg:shadow-none" style="background: rgb(var(--card)); color: rgb(var(--foreground));">
+      {% if product_rows %}
+        {% for product in product_rows %}
+          <div data-detail-panel="{{ forloop.counter0 }}" class="{% if not forloop.first %}hidden{% endif %}">
+            <div class="flex items-start justify-between mb-4">
+              <div>
+                <span class="badge badge-default">{{ product.category }}</span>
+                <h3 class="font-semibold text-lg mt-2">{{ product.name }}</h3>
+                <p class="text-xs text-muted-foreground">{{ product.path }}</p>
+              </div>
+              <button type="button" class="close-product-detail lg:hidden h-8 w-8 rounded-md border border-border inline-flex items-center justify-center hover:bg-muted" aria-label="Close product detail">
+                <i data-lucide="x" class="w-4 h-4"></i>
+              </button>
+            </div>
+            <div class="space-y-2 mb-4">
+              <div class="text-xs font-medium text-muted-foreground uppercase tracking-wider">Variants ({{ product.variants|length }})</div>
+              {% for variant in product.variants %}
+                <div class="p-3 rounded-lg border border-border">
+                  <div class="flex justify-between items-start gap-2">
+                    <div class="min-w-0">
+                      <div class="font-medium text-sm">{% if variant.pack_size %}{{ variant.pack_size }} {% endif %}{{ variant.unit|default:"Item" }}</div>
+                      <div class="text-[11px] text-muted-foreground">SKU {{ variant.sku }}</div>
+                      <div class="text-[11px] text-muted-foreground">BC {{ variant.barcode|default:"-" }}</div>
+                    </div>
+                    <div class="text-right shrink-0">
+                      <div class="text-sm font-semibold text-success">Rs {{ variant.sell_rate }}</div>
+                      <div class="text-[11px] text-destructive">buy Rs {{ variant.buy_rate }}</div>
+                    </div>
+                  </div>
+                  <div class="mt-2 flex items-center justify-between">
+                    <span class="badge {% if variant.stock_total <= variant.reorder_level %}badge-warning{% else %}badge-success{% endif %}">{{ variant.stock_total_display }} in stock</span>
+                    <div class="flex items-center gap-3">
+                      <button type="button" class="open-edit-item text-xs text-primary hover:underline" data-item-id="{{ variant.id }}">Edit details</button>
+                      <form method="post" class="inline js-confirm-delete" data-confirm-message="Delete this product?">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="delete_item">
+                        <input type="hidden" name="item_id" value="{{ variant.id }}">
+                        <input type="hidden" name="version" value="{{ variant.version }}">
+                        <button type="submit" class="text-xs text-destructive hover:underline">Delete</button>
+                      </form>
+                    </div>
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+            <div class="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Timeline</div>
+            <div class="space-y-2">
+              <div class="flex items-center gap-3 text-sm"><div class="w-7 h-7 rounded-full bg-muted flex items-center justify-center"><i data-lucide="package" class="w-3.5 h-3.5"></i></div><div class="flex-1">Product Created</div><div class="text-xs text-muted-foreground">{{ product.variants.0.created_at|date:"M d, Y" }}</div></div>
+              <div class="flex items-center gap-3 text-sm"><div class="w-7 h-7 rounded-full bg-muted flex items-center justify-center"><i data-lucide="tag" class="w-3.5 h-3.5"></i></div><div class="flex-1">Rate Updated</div><div class="text-xs text-muted-foreground">{{ product.variants.0.updated_at|timesince }} ago</div></div>
+              <div class="flex items-center gap-3 text-sm"><div class="w-7 h-7 rounded-full bg-muted flex items-center justify-center"><i data-lucide="clock" class="w-3.5 h-3.5"></i></div><div class="flex-1">Stock Updated</div><div class="text-xs text-muted-foreground">{{ product.variants.0.updated_at|timesince }} ago</div></div>
+            </div>
+          </div>
+        {% endfor %}
+      {% else %}
+        <div class="text-center py-10">
+          <div class="mx-auto w-11 h-11 rounded-lg bg-muted flex items-center justify-center mb-3"><i data-lucide="box" class="w-5 h-5 text-muted-foreground"></i></div>
+          <div class="font-medium">Select a product</div>
+          <p class="text-sm text-muted-foreground mt-1">Product details and variants will appear here.</p>
+        </div>
+      {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="product-modal" class="hidden fixed inset-0 z-50 bg-black/55 backdrop-blur-sm items-start justify-center overflow-y-auto p-4 sm:py-[4vh]">
+  <div class="w-full max-w-7xl max-h-[92vh] modal-surface border border-border rounded-xl shadow-2xl overflow-hidden flex flex-col">
+    <div class="h-14 px-5 border-b border-border flex items-center justify-between shrink-0">
+      <div>
+        <div class="font-semibold">Add Product</div>
+        <div class="text-xs text-muted-foreground">Create new chain or add inside an existing segment</div>
+      </div>
+      <button id="close-product-modal" class="w-8 h-8 rounded hover:bg-muted inline-flex items-center justify-center"><i data-lucide="x" class="w-4 h-4"></i></button>
+    </div>
+    <div class="p-5 overflow-y-auto modal-scroll">
+      <div class="inline-flex rounded-lg border border-border p-1 bg-muted/40 mb-5">
+        <button type="button" data-product-tab="new" class="product-tab h-8 px-4 rounded-md text-sm bg-primary text-primary-foreground">New Product</button>
+        <button type="button" data-product-tab="existing" class="product-tab h-8 px-4 rounded-md text-sm text-muted-foreground">Existing Product</button>
+      </div>
+
+      <form id="new-product-form" method="post" class="space-y-5" data-tab-panel="new">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="create_new_product">
+        <div>
+          <div class="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Segment</div>
+          <div class="flex gap-2">
+            <input id="new-segment" name="segment" class="form-input" placeholder="Enter segment name" required>
+            <button id="start-category-chain" type="button" class="h-10 px-4 rounded-md border border-border text-sm hover:bg-muted whitespace-nowrap">Add Category</button>
+          </div>
+        </div>
+
+        <div id="new-category-workspace" class="space-y-5"></div>
+
+        <div class="flex justify-end gap-2 pt-2 border-t border-border">
+          <button type="button" class="modal-cancel h-9 px-4 rounded-md border border-border text-sm hover:bg-muted">Cancel</button>
+          <button class="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90">Save Products</button>
+        </div>
+      </form>
+
+      <div data-tab-panel="existing" class="hidden space-y-4">
+        <div class="rounded-lg border border-border p-4 space-y-3">
+          <div>
+            <div class="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Search Existing Segment Or Product</div>
+            <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_280px] gap-2">
+              <input id="existing-segment-search" class="form-input" placeholder="Type product, category, or segment name" autocomplete="off">
+              <input type="hidden" id="existing-selected-segment-id">
+              <select id="existing-segment-select" class="form-input">
+                <option value="">Select segment</option>
+                {% for root in root_nodes %}
+                  <option value="{{ root.id }}" data-name="{{ root.name }}">{{ root.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div id="existing-search-results" class="hidden mt-2 rounded-lg border border-border overflow-hidden"></div>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            {% for root in root_nodes %}
+              <button type="button" class="existing-segment px-3 h-8 rounded-md border border-border text-xs hover:bg-muted" data-segment-id="{{ root.id }}" data-name="{{ root.name }}">{{ root.name }}</button>
+            {% empty %}
+              <div class="text-sm text-muted-foreground">No existing segments yet. Create one from New Product first.</div>
+            {% endfor %}
+          </div>
+        </div>
+
+        <form id="existing-reopen-form" method="post" class="hidden space-y-5">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="save_existing_segment">
+          <input type="hidden" name="segment_id" id="existing-form-segment-id">
+          <div>
+            <div class="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Segment</div>
+            <div class="flex gap-2">
+              <input id="existing-form-segment" name="segment" class="form-input" placeholder="Select a segment" readonly>
+              <button id="existing-start-category-chain" type="button" class="h-10 px-4 rounded-md border border-border text-sm hover:bg-muted whitespace-nowrap">Add Category</button>
+            </div>
+          </div>
+
+          <div id="existing-category-workspace" class="space-y-5"></div>
+
+          <div class="flex justify-end gap-2 pt-2 border-t border-border">
+            <button type="button" class="modal-cancel h-9 px-4 rounded-md border border-border text-sm hover:bg-muted">Cancel</button>
+            <button class="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90">Save Products</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="edit-item-modal" class="hidden fixed inset-0 z-50 bg-black/55 backdrop-blur-sm items-start justify-center overflow-y-auto p-4 sm:py-[6vh]">
+  <form method="post" class="w-full max-w-3xl max-h-[88vh] modal-surface border border-border rounded-xl shadow-2xl overflow-hidden flex flex-col">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="update_item">
+    <input type="hidden" name="item_id" id="edit-item-id">
+    <input type="hidden" name="version" id="edit-item-version">
+    <div class="h-14 px-5 border-b border-border flex items-center justify-between shrink-0">
+      <div>
+        <div class="font-semibold">Edit Product Details</div>
+        <div class="text-xs text-muted-foreground">Only product details can be changed here, not the category chain</div>
+      </div>
+      <button type="button" id="close-edit-item-modal" class="w-8 h-8 rounded hover:bg-muted inline-flex items-center justify-center"><i data-lucide="x" class="w-4 h-4"></i></button>
+    </div>
+    <div class="p-5 space-y-4 overflow-y-auto modal-scroll">
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <label class="md:col-span-2"><div class="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Product Name *</div><input id="edit-product-name" name="product_name" class="form-input js-sku-source"></label>
+        <label><div class="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">SKU</div><input id="edit-sku" name="sku" class="form-input js-sku-input"></label>
+        <label><div class="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Quantity</div><input id="edit-pack-size" name="pack_size" type="number" step="0.001" min="0" class="form-input js-sku-source" placeholder="1"></label>
+        <label><div class="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Unit</div><select id="edit-unit" name="unit" class="form-input js-sku-source"></select></label>
+        <label><div class="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Buy Rate *</div><input id="edit-buy-rate" name="buy_rate" type="number" step="0.01" class="form-input"></label>
+        <label><div class="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Sell Rate *</div><input id="edit-sell-rate" name="sell_rate" type="number" step="0.01" class="form-input"></label>
+        <label><div class="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">MRP</div><input id="edit-mrp" name="mrp" type="number" step="0.01" class="form-input"></label>
+      </div>
+      <div class="flex justify-end gap-2 pt-2 border-t border-border">
+        <button type="button" id="cancel-edit-item-modal" class="h-9 px-4 rounded-md border border-border text-sm hover:bg-muted">Cancel</button>
+        <button class="h-9 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90">Update Product</button>
+      </div>
+    </div>
+  </form>
+</div>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+  const nodes = {{ nodes_json|safe }};
+  const items = {
+    {% for product in product_rows %}
+      {% for variant in product.variants %}
+        "{{ variant.id }}": {
+          id: "{{ variant.id }}",
+          version: "{{ variant.version }}",
+          product_name: "{{ variant.display_name|escapejs }}",
+          sku: "{{ variant.sku|escapejs }}",
+          barcode: "{{ variant.barcode|escapejs }}",
+          unit: "{{ variant.unit|escapejs }}",
+          pack_size: "{{ variant.pack_size|escapejs }}",
+          buy_rate: "{{ variant.buy_rate }}",
+          sell_rate: "{{ variant.sell_rate }}",
+          mrp: "{{ variant.mrp|default:'' }}",
+          tax_percent: "{{ variant.tax_percent }}",
+          opening_stock: "{{ variant.opening_stock }}",
+          reorder_level: "{{ variant.reorder_level }}",
+          node_id: "{{ variant.product_node_id }}",
+          node_path: "{{ variant.product_node.full_path|escapejs }}"
+        },
+      {% endfor %}
+    {% endfor %}
+  };
+
+  const modal = document.getElementById("product-modal");
+  const openModal = () => { modal.classList.remove("hidden"); modal.classList.add("flex"); };
+  const closeModal = () => { modal.classList.add("hidden"); modal.classList.remove("flex"); };
+  document.getElementById("open-product-modal")?.addEventListener("click", openModal);
+  document.getElementById("close-product-modal")?.addEventListener("click", closeModal);
+  document.querySelectorAll(".modal-cancel").forEach((button) => button.addEventListener("click", closeModal));
+  modal?.addEventListener("click", (event) => { if (event.target === modal) closeModal(); });
+
+  document.querySelectorAll(".product-tab").forEach((button) => {
+    button.addEventListener("click", () => {
+      const tab = button.dataset.productTab;
+      document.querySelectorAll(".product-tab").forEach((item) => {
+        item.classList.toggle("bg-primary", item === button);
+        item.classList.toggle("text-primary-foreground", item === button);
+        item.classList.toggle("text-muted-foreground", item !== button);
+      });
+      document.querySelectorAll("[data-tab-panel]").forEach((panel) => panel.classList.toggle("hidden", panel.dataset.tabPanel !== tab));
+    });
+  });
+
+  let activeCategory = "{{ selected_segment.name|default:'All'|escapejs }}";
+  let currentProductPage = 1;
+  const productsPerPage = 50;
+  const productRows = Array.from(document.querySelectorAll("[data-product-row]"));
+  const productSummary = document.getElementById("product-pagination-summary");
+  const productPageLabel = document.getElementById("product-page-label");
+  const productPrevPage = document.getElementById("product-prev-page");
+  const productNextPage = document.getElementById("product-next-page");
+  const productDetailCard = document.getElementById("product-detail-card");
+  const isDesktopProducts = () => window.matchMedia("(min-width: 1024px)").matches;
+  const selectProductRow = (row) => {
+    if (!row) {
+      document.querySelectorAll("[data-detail-panel]").forEach((panel) => panel.classList.add("hidden"));
+      return;
+    }
+    productRows.forEach((item) => item.classList.remove("bg-primary/5"));
+    row.classList.add("bg-primary/5");
+    document.querySelectorAll("[data-detail-panel]").forEach((panel) => panel.classList.add("hidden"));
+    document.querySelector(`[data-detail-panel="${row.dataset.productKey}"]`)?.classList.remove("hidden");
+    if (!isDesktopProducts()) productDetailCard?.classList.remove("hidden");
+  };
+  const applyFilters = () => {
+    const term = document.getElementById("product-search").value.toLowerCase();
+    const matches = productRows.filter((row) => {
+      return row.dataset.text.toLowerCase().includes(term) && (activeCategory === "All" || row.dataset.category === activeCategory);
+    });
+    const totalPages = Math.max(1, Math.ceil(matches.length / productsPerPage));
+    currentProductPage = Math.min(currentProductPage, totalPages);
+    const start = (currentProductPage - 1) * productsPerPage;
+    const pageRows = matches.slice(start, start + productsPerPage);
+    productRows.forEach((row) => row.classList.toggle("hidden", !pageRows.includes(row)));
+    if (productSummary) {
+      const end = matches.length ? start + pageRows.length : 0;
+      productSummary.textContent = matches.length ? `Showing ${start + 1}-${end} of ${matches.length} products` : "No products found";
+    }
+    if (productPageLabel) productPageLabel.textContent = `Page ${currentProductPage} of ${totalPages}`;
+    if (productPrevPage) productPrevPage.disabled = currentProductPage <= 1;
+    if (productNextPage) productNextPage.disabled = currentProductPage >= totalPages;
+    const selectedVisible = pageRows.find((row) => row.classList.contains("bg-primary/5"));
+    if (isDesktopProducts()) {
+      selectProductRow(selectedVisible || pageRows[0]);
+    } else {
+      productDetailCard?.classList.add("hidden");
+      productRows.forEach((item) => item.classList.remove("bg-primary/5"));
+      document.querySelectorAll("[data-detail-panel]").forEach((panel) => panel.classList.add("hidden"));
+    }
+  };
+  document.querySelectorAll(".close-product-detail").forEach((button) => {
+    button.addEventListener("click", () => productDetailCard?.classList.add("hidden"));
+  });
+  productDetailCard?.addEventListener("click", (event) => {
+    if (!isDesktopProducts() && event.target === productDetailCard) productDetailCard.classList.add("hidden");
+  });
+  window.addEventListener("resize", () => {
+    if (!isDesktopProducts()) return;
+    productDetailCard?.classList.remove("hidden");
+    const selected = productRows.find((row) => row.classList.contains("bg-primary/5")) || productRows.find((row) => !row.classList.contains("hidden"));
+    if (selected) selectProductRow(selected);
+  });
+  document.getElementById("product-search")?.addEventListener("input", () => {
+    currentProductPage = 1;
+    applyFilters();
+  });
+  productPrevPage?.addEventListener("click", () => {
+    currentProductPage = Math.max(1, currentProductPage - 1);
+    applyFilters();
+  });
+  productNextPage?.addEventListener("click", () => {
+    currentProductPage += 1;
+    applyFilters();
+  });
+  document.querySelectorAll(".category-filter").forEach((button) => {
+    button.addEventListener("click", () => {
+      activeCategory = button.dataset.categoryFilter;
+      currentProductPage = 1;
+      document.querySelectorAll(".category-filter").forEach((b) => {
+        b.classList.remove("bg-primary", "text-primary-foreground");
+        b.classList.add("border", "border-border", "hover:bg-muted");
+      });
+      button.classList.add("bg-primary", "text-primary-foreground");
+      button.classList.remove("border", "border-border", "hover:bg-muted");
+      applyFilters();
+    });
+  });
+
+  productRows.forEach((row) => {
+    row.addEventListener("click", (event) => {
+      if (event.target.closest("button")) return;
+      selectProductRow(row);
+    });
+  });
+
+  const slugPart = (value) => {
+    const words = String(value || "").toUpperCase().match(/[A-Z0-9]+/g) || [];
+    if (words.length === 0) return "";
+    if (words.length === 1) return words[0].slice(0, 5);
+    return words.slice(0, 3).map((word) => word[0]).join("");
+  };
+  const buildSku = (parts) => parts.map(slugPart).filter(Boolean).join("-").slice(0, 64);
+  const escapeHtml = (value) => String(value || "").replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#039;"
+  }[char]));
+  const pathChips = (parts, removable = false) => parts.filter(Boolean).map((part, index) => `
+    ${index ? '<i data-lucide="chevron-right" class="w-4 h-4 text-muted-foreground"></i>' : ''}
+    <span class="inline-flex items-center gap-1 h-8 px-2 rounded-md ${removable && index ? 'border border-border bg-background' : 'bg-muted'}">
+      <span>${escapeHtml(part)}</span>
+      ${removable && index ? `<button type="button" class="remove-chain-step w-5 h-5 rounded hover:bg-destructive/10 text-destructive inline-flex items-center justify-center" data-remove-chain-index="${index - 1}" title="Remove category"><i data-lucide="x" class="w-3 h-3"></i></button>` : ''}
+    </span>
+  `).join("");
+  const quantityUnits = ["pcs", "pkt", "box", "bag", "btl", "can", "jar", "roll", "pair", "set", "doz", "mg", "g", "kg", "ml", "L", "mm", "cm", "m", "in", "ft"];
+  const quantityUnitAliases = { pc: "pcs", pcs: "pcs", pkt: "pkt", box: "box", bag: "bag", btl: "btl", can: "can", jar: "jar", roll: "roll", pair: "pair", set: "set", doz: "doz", mg: "mg", g: "g", gm: "g", kg: "kg", ml: "ml", l: "L", lt: "L", ltr: "L", mm: "mm", cm: "cm", m: "m", in: "in", ft: "ft" };
+  const quantityUnitOptions = () => quantityUnits.map((unit) => `<option value="${unit}">${unit}</option>`).join("");
+  const setQuantityUnit = (select, unit) => {
+    const normalized = quantityUnitAliases[String(unit || "").trim().toLowerCase()] || "pcs";
+    select.value = normalized;
+  };
+  const splitQuantityUnit = (packSize, unit) => {
+    const cleanPackSize = String(packSize || "").trim();
+    const cleanUnit = String(unit || "").trim();
+    if (cleanPackSize) return { packSize: cleanPackSize, unit: cleanUnit };
+    const match = cleanUnit.match(/^(\d+(?:\.\d+)?)\s*([a-zA-Z]+)$/);
+    if (match) return { packSize: match[1], unit: match[2] };
+    return { packSize: "", unit: cleanUnit };
+  };
+  document.getElementById("edit-unit").innerHTML = quantityUnitOptions();
+
+  let productCounter = 0;
+  let categoryCounter = 0;
+  const productCardHtml = (productId, path = [], options = {}) => `
+    <div class="product-card rounded-lg border border-border p-4 space-y-4" data-product-card="${productId}">
+      <input type="hidden" name="product_client_id" value="${productId}">
+      <input type="hidden" name="product_path_${productId}" value="${escapeHtml(JSON.stringify(path))}" data-product-path>
+      <input type="hidden" name="product_node_id_${productId}" value="${escapeHtml(options.nodeId || "")}">
+      <div class="flex items-center justify-between gap-3">
+        <div>
+          <div class="font-semibold text-sm">Product Details</div>
+          ${path.length ? `<div class="mt-1 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">${pathChips(path)}</div>` : ""}
+        </div>
+        <div class="flex items-center gap-2">
+          <button type="button" class="add-sibling-product inline-flex items-center gap-1 h-8 px-2 rounded-md border border-border text-xs hover:bg-muted">
+            <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+            Add Product
+          </button>
+          <button type="button" class="remove-product-card inline-flex items-center gap-1 h-8 px-2 rounded-md border border-border text-xs text-destructive hover:bg-destructive/10">
+            <i data-lucide="x" class="w-3.5 h-3.5"></i>
+            Remove Product
+          </button>
+        </div>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <label class="md:col-span-2"><div class="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Product Name *</div><input name="product_name_${productId}" class="form-input js-product-name" placeholder="Product name" value="${escapeHtml(options.productName || "")}"></label>
+        <label><div class="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">SKU</div><input name="sku_${productId}" class="form-input js-product-sku" placeholder="Auto generated" value="${escapeHtml(options.sku || "")}" ${options.sku ? 'data-touched="1"' : ""}></label>
+      </div>
+      <div class="rounded-lg border border-border overflow-hidden">
+        <div class="flex items-center justify-between gap-3 px-3 py-2 border-b border-border bg-muted/40">
+          <div class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Quantity Wise Prices</div>
+          <button type="button" class="add-variant-row inline-flex items-center gap-1 h-8 px-2 rounded-md border border-border text-xs hover:bg-muted">
+            <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+            Add Row
+          </button>
+        </div>
+        <div class="variant-list divide-y divide-border"></div>
+      </div>
+    </div>
+  `;
+  const variantRowHtml = (productId, variant = {}) => `
+    <div class="variant-row grid grid-cols-1 md:grid-cols-[1.25fr_0.8fr_1fr_1fr_1fr_auto] gap-2 p-3 items-end">
+      <input type="hidden" name="variant_item_id_${productId}" value="${escapeHtml(variant.id || "")}">
+      <input type="hidden" name="variant_version_${productId}" value="${escapeHtml(variant.version || "")}">
+      <input type="hidden" name="variant_sku_${productId}" value="${escapeHtml(variant.sku || "")}">
+      <label><div class="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Quantity</div><input name="variant_pack_size_${productId}" type="number" step="0.001" min="0" class="form-input" value="${escapeHtml(variant.pack_size || "1")}" placeholder="1"></label>
+      <label><div class="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Unit</div><select name="variant_unit_${productId}" class="form-input js-variant-unit" data-unit="${escapeHtml(variant.unit || "pcs")}">${quantityUnitOptions()}</select></label>
+      <label><div class="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Buy Rate *</div><input name="variant_buy_rate_${productId}" type="number" step="0.01" class="form-input" placeholder="0" value="${escapeHtml(variant.buy_rate || "")}"></label>
+      <label><div class="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Sell Rate *</div><input name="variant_sell_rate_${productId}" type="number" step="0.01" class="form-input" placeholder="0" value="${escapeHtml(variant.sell_rate || "")}"></label>
+      <label><div class="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">MRP</div><input name="variant_mrp_${productId}" type="number" step="0.01" class="form-input" placeholder="Optional" value="${escapeHtml(variant.mrp || "")}"></label>
+      <button type="button" class="remove-variant-row h-10 w-10 rounded-md border border-border text-destructive hover:bg-destructive/10 inline-flex items-center justify-center" title="Remove row"><i data-lucide="x" class="w-4 h-4"></i></button>
+    </div>
+  `;
+  const syncProductCard = (card, path, skuPath = path) => {
+    const sku = card.querySelector(".js-product-sku");
+    if (!sku.dataset.touched) {
+      const productName = card.querySelector(".js-product-name")?.value || "";
+      sku.value = buildSku([...skuPath, productName]);
+    }
+    card.querySelector("[data-product-path]")?.setAttribute("value", JSON.stringify(path));
+  };
+  const setVariantUnits = (scope) => {
+    scope.querySelectorAll(".js-variant-unit").forEach((select) => setQuantityUnit(select, select.dataset.unit));
+  };
+  const initProductCard = (card, pathProvider, addSibling, skuPathProvider = pathProvider, variants = []) => {
+    const productId = card.dataset.productCard;
+    const path = pathProvider();
+    const rows = variants.length ? variants : [{}];
+    rows.forEach((variant) => card.querySelector(".variant-list").insertAdjacentHTML("beforeend", variantRowHtml(productId, variant)));
+    setVariantUnits(card);
+    const sync = () => syncProductCard(card, pathProvider(), skuPathProvider());
+    card.querySelector(".js-product-sku")?.addEventListener("input", (event) => { event.currentTarget.dataset.touched = "1"; });
+    card.querySelector(".js-product-name")?.addEventListener("input", sync);
+    card.querySelector(".add-variant-row")?.addEventListener("click", () => {
+      card.querySelector(".variant-list").insertAdjacentHTML("beforeend", variantRowHtml(productId));
+      setVariantUnits(card);
+      lucide.createIcons();
+    });
+    card.addEventListener("click", (event) => {
+      if (event.target.closest(".remove-variant-row")) {
+        const rows = card.querySelectorAll(".variant-row");
+        if (rows.length > 1) event.target.closest(".variant-row").remove();
+      }
+      if (event.target.closest(".remove-product-card")) card.remove();
+      if (event.target.closest(".add-sibling-product")) addSibling?.();
+    });
+    sync();
+    lucide.createIcons();
+    return sync;
+  };
+
+  const newWorkspace = document.getElementById("new-category-workspace");
+  const createCategoryBlock = () => {
+    const id = ++categoryCounter;
+    const block = document.createElement("div");
+    block.className = "category-block rounded-lg border border-border p-4 space-y-4";
+    block.dataset.categoryBlock = id;
+    block.innerHTML = `
+      <div class="text-xs text-muted-foreground">Build category chain</div>
+      <div class="chain-display flex flex-wrap items-center gap-2 text-sm font-medium"></div>
+      <div class="flex flex-col sm:flex-row gap-2">
+        <input class="chain-input form-input" placeholder="Enter category name">
+        <button type="button" class="add-subcategory h-10 px-4 rounded-md border border-border text-sm hover:bg-muted whitespace-nowrap">Add Sub Category</button>
+        <button type="button" class="add-product-to-chain h-10 px-4 rounded-md bg-primary text-primary-foreground text-sm hover:opacity-90 whitespace-nowrap">Add Product</button>
+        <button type="button" class="remove-category-block h-10 px-3 rounded-md border border-border text-destructive hover:bg-destructive/10"><i data-lucide="x" class="w-4 h-4"></i></button>
+      </div>
+      <div class="product-list space-y-4"></div>
+    `;
+    const state = { chain: [] };
+    const path = () => state.chain.slice();
+    const render = () => {
+      const segment = document.getElementById("new-segment").value.trim();
+      block.querySelector(".chain-display").innerHTML = `${pathChips([segment, ...state.chain], true)}<i data-lucide="chevron-right" class="w-4 h-4 text-muted-foreground"></i><span class="text-muted-foreground">[new]</span>`;
+      block.querySelector(".chain-input").placeholder = state.chain.length ? "Add subcategory" : "Enter category name";
+      block.querySelectorAll(".product-card").forEach((card) => syncProductCard(card, path(), [segment, ...path()]));
+      lucide.createIcons();
+    };
+    const addProduct = () => {
+      const value = block.querySelector(".chain-input").value.trim();
+      if (value) {
+        state.chain.push(value);
+        block.querySelector(".chain-input").value = "";
+      }
+      const productId = `new_${++productCounter}`;
+      block.querySelector(".product-list").insertAdjacentHTML("beforeend", productCardHtml(productId, path()));
+      initProductCard(block.querySelector(`[data-product-card="${productId}"]`), path, addProduct, () => [document.getElementById("new-segment").value.trim(), ...path()]);
+      render();
+    };
+    block.addEventListener("click", (event) => {
+      const removeStep = event.target.closest(".remove-chain-step");
+      if (removeStep) {
+        state.chain.splice(Number(removeStep.dataset.removeChainIndex), 1);
+        render();
+        return;
+      }
+      if (event.target.closest(".add-subcategory")) {
+        const value = block.querySelector(".chain-input").value.trim();
+        if (value) {
+          state.chain.push(value);
+          block.querySelector(".chain-input").value = "";
+          render();
+        }
+      }
+      if (event.target.closest(".add-product-to-chain")) addProduct();
+      if (event.target.closest(".remove-category-block")) block.remove();
+    });
+    newWorkspace.appendChild(block);
+    render();
+  };
+  document.getElementById("start-category-chain")?.addEventListener("click", createCategoryBlock);
+  document.getElementById("new-segment")?.addEventListener("input", () => {
+    document.querySelectorAll(".category-block").forEach((block) => {
+      block.querySelectorAll(".product-card").forEach((card) => {
+        const raw = card.querySelector("[data-product-path]")?.value || "[]";
+        let path = [];
+        try { path = JSON.parse(raw); } catch (error) { path = []; }
+        syncProductCard(card, path, [document.getElementById("new-segment").value.trim(), ...path]);
+      });
+    });
+  });
+
+  const rootForNode = (nodeId) => {
+    let node = nodes.find((item) => String(item.id) === String(nodeId));
+    if (!node) return "";
+    while (node.parent_id) node = nodes.find((item) => item.id === node.parent_id) || node;
+    return String(node.id);
+  };
+  let selectedExistingSegmentId = "";
+  const nodeById = Object.fromEntries(nodes.map((node) => [String(node.id), node]));
+  const segmentNameById = Object.fromEntries(nodes.filter((node) => !node.parent_id).map((node) => [String(node.id), node.name]));
+  const pathPartsForNode = (nodeId) => {
+    const node = nodeById[String(nodeId)];
+    return node ? node.path.split(" > ").filter(Boolean) : [];
+  };
+  const existingWorkspace = document.getElementById("existing-category-workspace");
+  const existingForm = document.getElementById("existing-reopen-form");
+  const visiblePathForItem = (item) => pathPartsForNode(item.node_id).slice(1);
+  const commonProductSku = (variants) => {
+    if (!variants.length) return "";
+    if (variants.length === 1) return variants[0].sku || "";
+    let prefix = variants[0].sku || "";
+    variants.slice(1).forEach((variant) => {
+      while (prefix && !String(variant.sku || "").startsWith(prefix)) prefix = prefix.slice(0, -1);
+    });
+    return prefix.replace(/[-_\s]+$/, "") || variants[0].sku || "";
+  };
+  const addExistingCategoryBlock = (initialChain = [], groupedProducts = []) => {
+    const id = ++categoryCounter;
+    const block = document.createElement("div");
+    block.className = "category-block rounded-lg border border-border p-4 space-y-4";
+    block.dataset.categoryBlock = id;
+    block.innerHTML = `
+      <div class="text-xs text-muted-foreground">Build category chain</div>
+      <div class="chain-display flex flex-wrap items-center gap-2 text-sm font-medium"></div>
+      <div class="flex flex-col sm:flex-row gap-2">
+        <input class="chain-input form-input" placeholder="Add subcategory">
+        <button type="button" class="add-subcategory h-10 px-4 rounded-md border border-border text-sm hover:bg-muted whitespace-nowrap">Add Sub Category</button>
+        <button type="button" class="add-product-to-chain h-10 px-4 rounded-md bg-primary text-primary-foreground text-sm hover:opacity-90 whitespace-nowrap">Add Product</button>
+        <button type="button" class="remove-category-block h-10 px-3 rounded-md border border-border text-destructive hover:bg-destructive/10"><i data-lucide="x" class="w-4 h-4"></i></button>
+      </div>
+      <div class="product-list space-y-4"></div>
+    `;
+    const state = { chain: initialChain.slice() };
+    const path = () => state.chain.slice();
+    const render = () => {
+      const segment = document.getElementById("existing-form-segment").value.trim();
+      block.querySelector(".chain-display").innerHTML = `${pathChips([segment, ...state.chain], true)}<i data-lucide="chevron-right" class="w-4 h-4 text-muted-foreground"></i><span class="text-muted-foreground">[new]</span>`;
+      block.querySelector(".chain-input").placeholder = state.chain.length ? "Add subcategory" : "Enter category name";
+      block.querySelectorAll(".product-card").forEach((card) => syncProductCard(card, path(), [segment, ...path()]));
+      lucide.createIcons();
+    };
+    const addProduct = (product = null) => {
+      const typedCategory = block.querySelector(".chain-input").value.trim();
+      if (!product && typedCategory) {
+        state.chain.push(typedCategory);
+        block.querySelector(".chain-input").value = "";
+      }
+      const productId = `existing_${++productCounter}`;
+      const variants = product?.variants || [];
+      block.querySelector(".product-list").insertAdjacentHTML("beforeend", productCardHtml(productId, path(), {
+        nodeId: product?.nodeId || "",
+        productName: product?.name || "",
+        sku: commonProductSku(variants)
+      }));
+      initProductCard(block.querySelector(`[data-product-card="${productId}"]`), path, () => addProduct(), () => [document.getElementById("existing-form-segment").value.trim(), ...path()], variants);
+      render();
+    };
+    block.addEventListener("click", (event) => {
+      const removeStep = event.target.closest(".remove-chain-step");
+      if (removeStep) {
+        state.chain.splice(Number(removeStep.dataset.removeChainIndex), 1);
+        render();
+        return;
+      }
+      if (event.target.closest(".add-subcategory")) {
+        const value = block.querySelector(".chain-input").value.trim();
+        if (value) {
+          state.chain.push(value);
+          block.querySelector(".chain-input").value = "";
+          render();
+        }
+      }
+      if (event.target.closest(".add-product-to-chain")) addProduct();
+      if (event.target.closest(".remove-category-block")) block.remove();
+    });
+    existingWorkspace.appendChild(block);
+    groupedProducts.forEach((product) => addProduct(product));
+    render();
+    return block;
+  };
+  const showSegment = (segmentId, name) => {
+    selectedExistingSegmentId = String(segmentId || "");
+    existingForm.classList.remove("hidden");
+    existingWorkspace.innerHTML = "";
+    document.getElementById("existing-form-segment-id").value = selectedExistingSegmentId;
+    document.getElementById("existing-form-segment").value = name;
+    document.querySelectorAll(".existing-segment").forEach((button) => {
+      const active = button.dataset.segmentId === String(segmentId);
+      button.classList.toggle("bg-primary", active);
+      button.classList.toggle("text-primary-foreground", active);
+    });
+    const select = document.getElementById("existing-segment-select");
+    if (select) select.value = String(segmentId);
+    document.getElementById("existing-selected-segment-id").value = selectedExistingSegmentId;
+    document.getElementById("existing-segment-search").placeholder = `Selected: ${name}`;
+    const segmentItems = Object.values(items).filter((item) => rootForNode(item.node_id) === selectedExistingSegmentId);
+    const byPathAndName = new Map();
+    segmentItems.forEach((item) => {
+      const path = visiblePathForItem(item);
+      const key = `${item.node_id}::${item.product_name}`;
+      if (!byPathAndName.has(key)) byPathAndName.set(key, { nodeId: item.node_id, name: item.product_name, path, variants: [] });
+      byPathAndName.get(key).variants.push(item);
+    });
+    const byPath = new Map();
+    Array.from(byPathAndName.values()).forEach((product) => {
+      const key = product.path.join(" > ");
+      if (!byPath.has(key)) byPath.set(key, { path: product.path, products: [] });
+      byPath.get(key).products.push(product);
+    });
+    if (byPath.size) {
+      Array.from(byPath.values()).forEach((group) => addExistingCategoryBlock(group.path, group.products));
+    } else {
+      addExistingCategoryBlock([]);
+    }
+  };
+  const existingSearchInput = document.getElementById("existing-segment-search");
+  const existingResults = document.getElementById("existing-search-results");
+  const existingRecords = [
+    ...nodes.map((node) => ({
+      type: node.node_type === "SEGMENT" ? "Segment" : "Category",
+      label: node.name,
+      detail: node.path,
+      rootId: rootForNode(node.id),
+      itemId: ""
+    })),
+    ...Object.values(items).map((item) => ({
+      type: "Product",
+      label: item.product_name,
+      detail: `${item.node_path} - SKU ${item.sku}`,
+      rootId: rootForNode(item.node_id),
+      itemId: item.id
+    }))
+  ];
+  const selectExistingRecord = (record) => {
+    if (!record?.rootId) return;
+    showSegment(record.rootId, segmentNameById[String(record.rootId)] || record.label);
+    if (existingSearchInput) {
+      existingSearchInput.value = record.label;
+      existingSearchInput.placeholder = `${record.type}: ${record.label}`;
+    }
+    existingResults?.classList.add("hidden");
+    if (record.itemId) {
+      const row = document.querySelector(`input[name^="variant_item_id_"][value="${record.itemId}"]`)?.closest(".variant-row");
+      row?.classList.add("ring-1", "ring-primary");
+      row?.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+  };
+  const renderExistingResults = (term) => {
+    if (!existingResults) return;
+    const query = term.trim().toLowerCase();
+    if (!query) {
+      existingResults.classList.add("hidden");
+      existingResults.innerHTML = "";
+      return;
+    }
+    const matches = existingRecords.filter((record) => `${record.label} ${record.detail}`.toLowerCase().includes(query)).slice(0, 12);
+    existingSearchInput.placeholder = matches[0] ? `${matches[0].type}: ${matches[0].label}` : "No match found";
+    existingResults.innerHTML = matches.length ? matches.map((record, index) => `
+      <button type="button" class="existing-result w-full text-left px-3 py-2 hover:bg-muted border-t border-border first:border-t-0" data-result-index="${index}">
+        <span class="text-sm font-medium">${escapeHtml(record.label)}</span>
+        <span class="ml-2 badge badge-muted">${escapeHtml(record.type)}</span>
+        <span class="block text-[11px] text-muted-foreground truncate">${escapeHtml(record.detail)}</span>
+      </button>
+    `).join("") : `<div class="px-3 py-2 text-sm text-muted-foreground">No matching segment or product</div>`;
+    existingResults.querySelectorAll(".existing-result").forEach((button) => {
+      button.addEventListener("click", () => selectExistingRecord(matches[Number(button.dataset.resultIndex)]));
+    });
+    existingResults.classList.remove("hidden");
+  };
+  document.querySelectorAll(".existing-segment").forEach((button) => button.addEventListener("click", () => {
+    existingSearchInput.value = "";
+    showSegment(button.dataset.segmentId, button.dataset.name);
+  }));
+  document.getElementById("existing-segment-select")?.addEventListener("change", (event) => {
+    const option = event.target.selectedOptions[0];
+    if (!event.target.value) return;
+    existingSearchInput.value = "";
+    showSegment(event.target.value, option?.dataset.name || option?.textContent || "Segment");
+  });
+  existingSearchInput?.addEventListener("input", (event) => {
+    renderExistingResults(event.target.value);
+  });
+  existingSearchInput?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    const query = event.currentTarget.value.trim().toLowerCase();
+    const first = existingRecords.find((record) => `${record.label} ${record.detail}`.toLowerCase().includes(query));
+    if (first) {
+      event.preventDefault();
+      selectExistingRecord(first);
+    }
+  });
+  document.getElementById("existing-start-category-chain")?.addEventListener("click", () => addExistingCategoryBlock([]));
+
+  const editModal = document.getElementById("edit-item-modal");
+  const closeEditModal = () => { editModal.classList.add("hidden"); editModal.classList.remove("flex"); };
+  document.getElementById("close-edit-item-modal")?.addEventListener("click", closeEditModal);
+  document.getElementById("cancel-edit-item-modal")?.addEventListener("click", closeEditModal);
+  editModal?.addEventListener("click", (event) => { if (event.target === editModal) closeEditModal(); });
+  document.querySelectorAll(".open-edit-item").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const item = items[button.dataset.itemId];
+      if (!item) return;
+      document.getElementById("edit-item-id").value = item.id;
+      document.getElementById("edit-item-version").value = item.version;
+      document.getElementById("edit-product-name").value = item.product_name;
+      document.getElementById("edit-sku").value = item.sku;
+      const quantity = splitQuantityUnit(item.pack_size, item.unit);
+      document.getElementById("edit-pack-size").value = quantity.packSize;
+      setQuantityUnit(document.getElementById("edit-unit"), quantity.unit);
+      document.getElementById("edit-buy-rate").value = item.buy_rate;
+      document.getElementById("edit-sell-rate").value = item.sell_rate;
+      document.getElementById("edit-mrp").value = item.mrp;
+      editModal.classList.remove("hidden");
+      editModal.classList.add("flex");
+    });
+  });
+  document.querySelectorAll(".js-confirm-delete").forEach((form) => {
+    form.addEventListener("click", (event) => event.stopPropagation());
+    form.addEventListener("submit", (event) => {
+      if (!confirm(form.dataset.confirmMessage || "Delete this item?")) {
+        event.preventDefault();
+      }
+    });
+  });
+  applyFilters();
+  lucide.createIcons();
+</script>
+{% endblock %}

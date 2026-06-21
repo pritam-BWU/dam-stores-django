@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ page_title }} - Dam Stores</title>
+    <script>
+      window.tailwind = window.tailwind || {};
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              background: "rgb(var(--background) / <alpha-value>)",
+              foreground: "rgb(var(--foreground) / <alpha-value>)",
+              card: "rgb(var(--card) / <alpha-value>)",
+              primary: "rgb(var(--primary) / <alpha-value>)",
+              "primary-foreground": "rgb(var(--primary-foreground) / <alpha-value>)",
+              muted: "rgb(var(--muted) / <alpha-value>)",
+              "muted-foreground": "rgb(var(--muted-foreground) / <alpha-value>)",
+              border: "rgb(var(--border) / <alpha-value>)",
+              destructive: "rgb(var(--destructive) / <alpha-value>)",
+              sidebar: "rgb(var(--sidebar) / <alpha-value>)",
+              "sidebar-foreground": "rgb(var(--sidebar-foreground) / <alpha-value>)",
+              "sidebar-primary": "rgb(var(--sidebar-primary) / <alpha-value>)",
+              "sidebar-primary-foreground": "rgb(var(--sidebar-primary-foreground) / <alpha-value>)",
+              "sidebar-accent": "rgb(var(--sidebar-accent) / <alpha-value>)",
+              "sidebar-accent-foreground": "rgb(var(--sidebar-accent-foreground) / <alpha-value>)",
+              "sidebar-border": "rgb(var(--sidebar-border) / <alpha-value>)",
+            }
+          }
+        }
+      };
+    </script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+      (() => {
+        try {
+          if (localStorage.getItem("dam-theme") === "dark") document.documentElement.classList.add("dark");
+          if (localStorage.getItem("dam-sidebar-collapsed") === "1") document.documentElement.classList.add("sidebar-collapsed");
+        } catch (error) {}
+      })();
+    </script>
+    <style>
+      :root {
+        --background: 250 250 251;
+        --foreground: 26 36 53;
+        --card: 255 255 255;
+        --primary: 0 81 194;
+        --primary-foreground: 255 255 255;
+        --muted: 242 244 247;
+        --muted-foreground: 107 119 138;
+        --border: 229 233 238;
+        --surface-a: 255 255 255;
+        --surface-b: 247 251 255;
+        --surface-c: 243 247 252;
+        --surface-d: 239 246 255;
+        --input-surface: 255 255 255;
+        --table-head: 244 248 253;
+        --destructive: 198 46 31;
+        --success: 30 151 91;
+        --warning: 177 124 0;
+        --info: 0 144 211;
+        --sidebar: 17 30 56;
+        --sidebar-foreground: 224 232 243;
+        --sidebar-primary: 0 116 255;
+        --sidebar-primary-foreground: 255 255 255;
+        --sidebar-accent: 35 53 88;
+        --sidebar-accent-foreground: 248 250 252;
+        --sidebar-border: 48 66 101;
+      }
+      .dark {
+        --background: 8 15 25;
+        --foreground: 244 246 249;
+        --card: 18 28 45;
+        --primary: 43 142 255;
+        --primary-foreground: 7 13 22;
+        --muted: 29 40 59;
+        --muted-foreground: 171 180 193;
+        --border: 54 69 95;
+        --surface-a: 16 27 45;
+        --surface-b: 13 35 54;
+        --surface-c: 22 31 51;
+        --surface-d: 15 43 65;
+        --input-surface: 9 18 31;
+        --table-head: 20 31 49;
+        --destructive: 245 87 64;
+        --success: 62 184 121;
+        --warning: 208 145 0;
+        --info: 53 167 238;
+        --sidebar: 6 12 22;
+        --sidebar-foreground: 227 234 244;
+        --sidebar-primary: 43 142 255;
+        --sidebar-primary-foreground: 255 255 255;
+        --sidebar-accent: 18 33 55;
+        --sidebar-accent-foreground: 248 250 252;
+        --sidebar-border: 34 49 75;
+      }
+      body {
+        background:
+          linear-gradient(180deg, rgb(var(--background)) 0%, rgb(var(--background)) 54%, rgb(241 245 249) 100%);
+        color: rgb(var(--foreground));
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      .dark body {
+        background:
+          linear-gradient(180deg, rgb(4 11 17) 0%, rgb(var(--background)) 50%, rgb(8 18 27) 100%);
+      }
+      body > .h-screen.bg-background {
+        background: inherit !important;
+      }
+      .border-border { border-color: rgb(var(--border)) !important; }
+      .border-sidebar-border { border-color: rgb(var(--sidebar-border)) !important; }
+      .dark .divide-border > :not([hidden]) ~ :not([hidden]) { border-color: rgb(var(--border)) !important; }
+      .bg-card.border {
+        background: linear-gradient(180deg, rgb(var(--surface-a)) 0%, rgb(var(--card)) 100%) !important;
+        box-shadow: 0 10px 30px rgb(15 23 42 / 0.05), 0 1px 0 rgb(255 255 255 / 0.85) inset;
+      }
+      main .bg-card.border:nth-of-type(3n+1) {
+        background: linear-gradient(180deg, rgb(var(--surface-b)) 0%, rgb(var(--card)) 100%) !important;
+      }
+      main .bg-card.border:nth-of-type(3n+2) {
+        background: linear-gradient(180deg, rgb(var(--surface-c)) 0%, rgb(var(--card)) 100%) !important;
+      }
+      main .bg-card.border:nth-of-type(3n) {
+        background: linear-gradient(180deg, rgb(var(--surface-d)) 0%, rgb(var(--card)) 100%) !important;
+      }
+      .dark .bg-card.border {
+        box-shadow: 0 14px 32px rgb(0 0 0 / 0.22), 0 1px 0 rgb(255 255 255 / 0.035) inset;
+      }
+      .bg-muted\/40 { background-color: rgb(var(--table-head) / 0.86) !important; }
+      .bg-muted { background-color: rgb(var(--muted)) !important; }
+      .hover\:bg-muted\/30:hover { background-color: rgb(var(--muted) / 0.34) !important; }
+      .hover\:bg-muted\/40:hover { background-color: rgb(var(--muted) / 0.42) !important; }
+      .hover\:bg-muted\/60:hover { background-color: rgb(var(--muted) / 0.62) !important; }
+      .hover\:bg-muted:hover { background-color: rgb(var(--muted)) !important; }
+      main .bg-background,
+      main .border.bg-background {
+        background-color: rgb(var(--input-surface)) !important;
+      }
+      main .bg-primary\/5 {
+        background-color: rgb(var(--primary) / 0.09) !important;
+      }
+      input::placeholder,
+      textarea::placeholder {
+        color: rgb(var(--muted-foreground) / 0.82);
+      }
+      .dark canvas { filter: saturate(1.08); }
+      .scrollbar-hidden { scrollbar-width: none; -ms-overflow-style: none; }
+      .scrollbar-hidden::-webkit-scrollbar { display: none; }
+      .form-input {
+        width: 100%;
+        min-height: 36px;
+        padding: 8px 10px;
+        border: 1px solid rgb(var(--border));
+        background: rgb(var(--input-surface));
+        border-radius: 6px;
+        font-size: 13px;
+        outline: none;
+      }
+      .form-input:focus { border-color: rgb(var(--primary)); }
+      .modal-surface {
+        background: rgb(var(--card));
+        color: rgb(var(--foreground));
+      }
+      .dark .modal-surface {
+        background: linear-gradient(180deg, rgb(8 18 27) 0%, rgb(7 15 23) 100%);
+      }
+      .modal-scroll {
+        scrollbar-color: rgb(var(--border)) transparent;
+        scrollbar-width: thin;
+      }
+      .modal-scroll::-webkit-scrollbar { width: 10px; }
+      .modal-scroll::-webkit-scrollbar-track { background: transparent; }
+      .modal-scroll::-webkit-scrollbar-thumb {
+        background: rgb(var(--border));
+        border: 3px solid transparent;
+        background-clip: padding-box;
+        border-radius: 999px;
+      }
+      .badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+      .badge-default { background: rgb(var(--primary) / 0.1); color: rgb(var(--primary)); }
+      .badge-success { background: rgb(var(--success) / 0.12); color: rgb(var(--success)); }
+      .badge-warning { background: rgb(var(--warning) / 0.14); color: rgb(var(--warning)); }
+      .badge-destructive { background: rgb(var(--destructive) / 0.12); color: rgb(var(--destructive)); }
+      .badge-info { background: rgb(var(--info) / 0.12); color: rgb(var(--info)); }
+      .badge-muted { background: rgb(var(--muted)); color: rgb(var(--muted-foreground)); }
+      .text-success { color: rgb(var(--success)) !important; }
+      .text-warning { color: rgb(var(--warning)) !important; }
+      .sidebar-nav-active {
+        background: rgb(var(--sidebar-primary)) !important;
+        color: rgb(var(--sidebar-primary-foreground)) !important;
+        box-shadow: 0 0 0 1px rgb(255 255 255 / 0.16) inset, 0 8px 20px rgb(0 0 0 / 0.18);
+      }
+      #sidebar {
+        transition: width 180ms ease, transform 180ms ease;
+      }
+      #sidebar .sidebar-label,
+      #sidebar .sidebar-group-label,
+      #sidebar .sidebar-brand-text,
+      #sidebar .sidebar-brand-icon,
+      #sidebar .sidebar-user-meta,
+      #sidebar .sidebar-user-avatar,
+      #sidebar nav,
+      #sidebar a,
+      #sidebar .sidebar-shell-header,
+      #sidebar .sidebar-collapse-icon {
+        transition: opacity 160ms ease, transform 180ms ease, padding 180ms ease;
+      }
+      @media (min-width: 1024px) {
+        .sidebar-collapsed #sidebar {
+          width: 4.75rem !important;
+        }
+        .sidebar-collapsed #sidebar .sidebar-brand-text,
+        .sidebar-collapsed #sidebar .sidebar-brand-icon,
+        .sidebar-collapsed #sidebar .sidebar-label,
+        .sidebar-collapsed #sidebar .sidebar-group-label,
+        .sidebar-collapsed #sidebar .sidebar-user-meta,
+        .sidebar-collapsed #sidebar .sidebar-user-avatar {
+          opacity: 0;
+          width: 0;
+          height: 0;
+          overflow: hidden;
+          pointer-events: none;
+        }
+        .sidebar-collapsed #sidebar .sidebar-shell-header {
+          justify-content: center;
+          gap: 0;
+          padding-left: 0.75rem;
+          padding-right: 0.75rem;
+        }
+        .sidebar-collapsed #sidebar nav {
+          padding-left: 0.55rem;
+          padding-right: 0.55rem;
+        }
+        .sidebar-collapsed #sidebar nav > div {
+          margin-bottom: 0.5rem;
+        }
+        .sidebar-collapsed #sidebar a {
+          justify-content: center;
+          gap: 0;
+          padding-left: 0.75rem;
+          padding-right: 0.75rem;
+        }
+        .sidebar-collapsed #sidebar .sidebar-user-box {
+          justify-content: center;
+          gap: 0;
+          padding-left: 0.5rem;
+          padding-right: 0.5rem;
+        }
+        .sidebar-collapsed #sidebar .sidebar-collapse-icon {
+          transform: rotate(180deg);
+        }
+      }
+      .existing-product-row.ring-primary,
+      .variant-row.ring-primary {
+        box-shadow: 0 0 0 1px rgb(var(--primary));
+      }
+      .product-list-scroll,
+      .product-detail-scroll {
+        max-height: calc(100vh - 270px);
+        scrollbar-color: rgb(var(--border)) transparent;
+        scrollbar-width: thin;
+      }
+      .product-list-scroll::-webkit-scrollbar,
+      .product-detail-scroll::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+      }
+      .product-list-scroll::-webkit-scrollbar-track,
+      .product-detail-scroll::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .product-list-scroll::-webkit-scrollbar-thumb,
+      .product-detail-scroll::-webkit-scrollbar-thumb {
+        background: rgb(var(--border));
+        border: 3px solid transparent;
+        background-clip: padding-box;
+        border-radius: 999px;
+      }
+      @media (max-width: 1023px) {
+        .product-list-scroll,
+        .product-detail-scroll {
+          max-height: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="h-screen overflow-hidden bg-background text-foreground flex">
+      {% include "stock_management/components/sidebar.html" %}
+      <div id="overlay" class="hidden fixed inset-0 bg-black/65 z-[60] lg:hidden"></div>
+      <div class="flex-1 h-screen overflow-y-auto flex flex-col min-w-0">
+        <header class="h-16 shrink-0 sticky top-0 z-50 bg-background border-b border-border flex items-center px-3 sm:px-6 gap-2 sm:gap-4 shadow-sm" style="background: rgb(var(--background));">
+          <button id="menu-open" class="lg:hidden" aria-label="menu"><i data-lucide="menu" class="w-5 h-5"></i></button>
+          <div class="flex-1 min-w-0">
+            <div class="text-lg font-semibold tracking-tight truncate">{{ page_title }}</div>
+          </div>
+          <button id="theme-toggle" class="w-9 h-9 rounded-md border border-border flex items-center justify-center hover:bg-muted transition" aria-label="theme">
+            <i data-lucide="moon" class="w-4 h-4"></i>
+          </button>
+          <div class="relative">
+            <button id="notification-toggle" class="relative w-9 h-9 rounded-md border border-border flex items-center justify-center hover:bg-muted transition" aria-label="notifications">
+              <i data-lucide="bell" class="w-4 h-4"></i>
+              {% if app_notification_count %}
+                <span class="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full bg-destructive text-white text-[10px] leading-5 text-center ring-2 ring-background">{{ app_notification_count }}</span>
+              {% endif %}
+            </button>
+            <div id="notification-panel" class="hidden absolute right-0 mt-2 w-[min(360px,calc(100vw-2rem))] rounded-lg border border-border shadow-xl z-40 overflow-hidden" style="background: rgb(var(--card)); color: rgb(var(--foreground));">
+              <div class="px-3 py-2 border-b border-border flex items-center justify-between gap-3">
+                <div class="font-semibold text-sm">Notifications</div>
+                <div class="text-[11px] text-muted-foreground">Last 48 hours</div>
+              </div>
+              <div class="max-h-80 overflow-y-auto divide-y divide-border">
+                {% for notification in app_notifications %}
+                  <a href="{{ notification.link|default:'#' }}" class="block px-3 py-2.5 hover:bg-muted/40">
+                    <div class="text-sm leading-5">{{ notification.message }}</div>
+                    <div class="text-[11px] text-muted-foreground mt-1">{{ notification.created_at|date:"M d, Y h:i A" }}</div>
+                  </a>
+                {% empty %}
+                  <div class="px-3 py-8 text-sm text-muted-foreground text-center">No notifications.</div>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+        </header>
+        <main class="flex-1 p-4 sm:p-6 max-w-[1600px] w-full mx-auto">
+          {% block content %}{% endblock %}
+        </main>
+      </div>
+    </div>
+    <script>
+      const sidebar = document.getElementById("sidebar");
+      const overlay = document.getElementById("overlay");
+      const sidebarCollapse = document.getElementById("sidebar-collapse");
+      document.getElementById("menu-open")?.addEventListener("click", () => {
+        sidebar.classList.remove("-translate-x-full");
+        overlay.classList.remove("hidden");
+      });
+      document.querySelectorAll("[data-close-sidebar], #overlay").forEach((el) => {
+        el.addEventListener("click", () => {
+          sidebar.classList.add("-translate-x-full");
+          overlay.classList.add("hidden");
+        });
+      });
+      sidebarCollapse?.addEventListener("click", () => {
+        const collapsed = !document.documentElement.classList.contains("sidebar-collapsed");
+        document.documentElement.classList.toggle("sidebar-collapsed", collapsed);
+        try {
+          localStorage.setItem("dam-sidebar-collapsed", collapsed ? "1" : "0");
+        } catch (error) {}
+      });
+      document.getElementById("theme-toggle")?.addEventListener("click", () => {
+        document.documentElement.classList.toggle("dark");
+        localStorage.setItem("dam-theme", document.documentElement.classList.contains("dark") ? "dark" : "light");
+      });
+      const notificationToggle = document.getElementById("notification-toggle");
+      const notificationPanel = document.getElementById("notification-panel");
+      notificationToggle?.addEventListener("click", (event) => {
+        event.stopPropagation();
+        notificationPanel?.classList.toggle("hidden");
+      });
+      document.addEventListener("click", (event) => {
+        if (!notificationPanel || notificationPanel.classList.contains("hidden")) return;
+        if (!notificationPanel.contains(event.target) && !notificationToggle?.contains(event.target)) {
+          notificationPanel.classList.add("hidden");
+        }
+      });
+      if (localStorage.getItem("dam-theme") === "dark") document.documentElement.classList.add("dark");
+      lucide.createIcons();
+    </script>
+    {% block page_scripts %}{% endblock %}
+  </body>
+</html>

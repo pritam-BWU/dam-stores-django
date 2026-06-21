@@ -1,0 +1,229 @@
+{% extends "stock_management/components/app_shell.html" %}
+
+{% block content %}
+<div class="space-y-5">
+  {% if messages %}
+    <div class="space-y-2">
+      {% for message in messages %}
+        <div class="rounded-md border border-border bg-card px-4 py-3 text-sm">{{ message }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <form method="post" class="relative z-0 bg-card border border-border rounded-xl p-4 space-y-4" id="stock-record-form">
+    {% csrf_token %}
+    <div>
+      <div class="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Search Product</div>
+      <input type="hidden" name="product_item_id" id="stock-product-id">
+      <div class="flex items-center gap-2 px-3 h-10 rounded-md border border-border bg-background">
+        <i data-lucide="search" class="w-4 h-4 text-muted-foreground"></i>
+        <input id="stock-product-search" class="flex-1 bg-transparent outline-none text-sm" placeholder="Type product name or SKU..." autocomplete="off">
+      </div>
+      <div id="stock-product-results" class="hidden mt-2 w-full rounded-lg border border-border bg-card shadow-2xl overflow-hidden"></div>
+    </div>
+
+    <div id="stock-record-panel" class="hidden rounded-xl border border-border bg-muted/30 p-4 space-y-4">
+      <div id="stock-selected-product" class="rounded-lg border border-border bg-background px-3 py-2 text-sm"></div>
+      <div class="grid grid-cols-1 md:grid-cols-[1fr_180px_180px_auto] gap-3 items-end">
+        <div>
+          <div class="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Quantity Parameter</div>
+          <div id="stock-quantity-parameter" class="h-10 px-3 rounded-md border border-border bg-background flex items-center text-sm font-medium"></div>
+        </div>
+        <label>
+          <div class="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Quantity</div>
+          <input id="stock-quantity-input" name="quantity" type="number" min="0.001" step="0.001" class="form-input" placeholder="0" required disabled>
+        </label>
+        <label>
+          <div class="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Expiry Date</div>
+          <input id="stock-expiry-input" name="expiry_date" type="date" class="form-input" disabled>
+        </label>
+        <button id="stock-save-button" class="h-10 px-4 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 whitespace-nowrap" disabled>Save Stock</button>
+      </div>
+    </div>
+  </form>
+
+  <div class="relative z-0 bg-card border border-border rounded-xl overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-muted/40 text-muted-foreground text-xs">
+          <tr>
+            <th class="text-left font-medium px-4 py-3">Product</th>
+            <th class="text-left font-medium px-4 py-3 hidden md:table-cell">SKU</th>
+            <th class="text-left font-medium px-4 py-3">Quantity Parameter</th>
+            <th class="text-right font-medium px-4 py-3">Stock Quantity</th>
+            <th class="text-left font-medium px-4 py-3 hidden lg:table-cell">Expiry Dates</th>
+            <th class="text-right font-medium px-4 py-3">Rate</th>
+            <th class="text-right font-medium px-4 py-3">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in items %}
+            <tr data-stock-row data-text="{{ item.display_name }} {{ item.sku }} {{ item.product_node.full_path }} {{ item.unit }}" class="border-t border-border hover:bg-muted/30">
+              <td class="px-4 py-3">
+                <div class="font-medium truncate max-w-[240px]">{{ item.display_name }}</div>
+                <div class="text-xs text-muted-foreground truncate max-w-[280px]">{{ item.product_node.full_path }}</div>
+              </td>
+              <td class="px-4 py-3 hidden md:table-cell text-xs font-mono text-muted-foreground">{{ item.sku }}</td>
+              <td class="px-4 py-3">{% if item.pack_size %}{{ item.pack_size }} {% endif %}{{ item.unit }}</td>
+              <td class="px-4 py-3 text-right font-medium">{{ item.stock_total_display }}</td>
+              <td class="px-4 py-3 hidden lg:table-cell text-xs text-muted-foreground">{{ item.expiry_dates_display }}</td>
+              <td class="px-4 py-3 text-right text-success font-medium">Rs {{ item.sell_rate }}</td>
+              <td class="px-4 py-3 text-right"><span class="badge badge-{{ item.stock_status_tone }}">{{ item.stock_status }}</span></td>
+            </tr>
+          {% empty %}
+            <tr>
+              <td colspan="7" class="px-4 py-12 text-center text-sm text-muted-foreground">Create products first, then stock can be entered here.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if stock_page.paginator.count %}
+      <div class="border-t border-border px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-sm">
+        <div class="text-muted-foreground">Showing {{ stock_page.start_index }}-{{ stock_page.end_index }} of {{ stock_page.paginator.count }}</div>
+        <div class="flex items-center gap-2">
+          {% if stock_page.has_previous %}
+            <a class="h-8 px-3 rounded-md border border-border inline-flex items-center justify-center hover:bg-muted" href="?page={{ stock_page.previous_page_number }}">Previous</a>
+          {% else %}
+            <span class="h-8 px-3 rounded-md border border-border inline-flex items-center justify-center text-muted-foreground opacity-60">Previous</span>
+          {% endif %}
+          <span class="text-xs text-muted-foreground">Page {{ stock_page.number }} of {{ stock_page.paginator.num_pages }}</span>
+          {% if stock_page.has_next %}
+            <a class="h-8 px-3 rounded-md border border-border inline-flex items-center justify-center hover:bg-muted" href="?page={{ stock_page.next_page_number }}">Next</a>
+          {% else %}
+            <span class="h-8 px-3 rounded-md border border-border inline-flex items-center justify-center text-muted-foreground opacity-60">Next</span>
+          {% endif %}
+        </div>
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="relative z-0 bg-card border border-border rounded-xl overflow-hidden">
+    <div class="px-4 py-3 border-b border-border font-semibold text-sm">Stock Records</div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-muted/40 text-muted-foreground text-xs">
+          <tr>
+            <th class="text-left font-medium px-4 py-3">Product</th>
+            <th class="text-right font-medium px-4 py-3">Quantity</th>
+            <th class="text-left font-medium px-4 py-3">Expiry Date</th>
+            <th class="text-right font-medium px-4 py-3">Rate</th>
+            <th class="text-left font-medium px-4 py-3 hidden md:table-cell">Entered By</th>
+            <th class="text-left font-medium px-4 py-3">Date</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for entry in stock_entries %}
+            <tr class="border-t border-border">
+              <td class="px-4 py-3">
+                <div class="font-medium">{{ entry.product_item.display_name }}</div>
+                <div class="text-xs text-muted-foreground">{{ entry.product_item.sku }}</div>
+              </td>
+              <td class="px-4 py-3 text-right font-medium">{{ entry.quantity }} {{ entry.product_item.unit }}</td>
+              <td class="px-4 py-3">{{ entry.expiry_date|date:"Y-m-d"|default:"-" }}</td>
+              <td class="px-4 py-3 text-right text-success">Rs {{ entry.rate }}</td>
+              <td class="px-4 py-3 hidden md:table-cell">{{ entry.created_by.name|default:entry.created_by.username }}</td>
+              <td class="px-4 py-3 text-muted-foreground">{{ entry.created_at|date:"Y-m-d H:i" }}</td>
+            </tr>
+          {% empty %}
+            <tr>
+              <td colspan="6" class="px-4 py-10 text-center text-sm text-muted-foreground">No stock entries recorded yet.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+  const stockProducts = {{ product_options_json|safe }};
+  const escapeHtml = (value) => String(value || "").replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#039;"
+  }[char]));
+  const productSearch = document.getElementById("stock-product-search");
+  const productIdInput = document.getElementById("stock-product-id");
+  const productResults = document.getElementById("stock-product-results");
+  const selectedProduct = document.getElementById("stock-selected-product");
+  const entryPanel = document.getElementById("stock-record-panel");
+  const quantityParameter = document.getElementById("stock-quantity-parameter");
+  const quantityInput = document.getElementById("stock-quantity-input");
+  const expiryInput = document.getElementById("stock-expiry-input");
+  const saveButton = document.getElementById("stock-save-button");
+
+  const selectStockProduct = (product) => {
+    productIdInput.value = product.id;
+    productSearch.value = product.name;
+    productResults.classList.add("hidden");
+    entryPanel.classList.remove("hidden");
+    quantityInput.disabled = false;
+    expiryInput.disabled = false;
+    saveButton.disabled = false;
+    quantityInput.value = "";
+    expiryInput.value = "";
+    quantityInput.focus();
+    quantityParameter.textContent = product.quantity_label;
+    selectedProduct.innerHTML = `
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div><span class="font-medium">${escapeHtml(product.name)}</span><span class="text-muted-foreground"> - ${escapeHtml(product.path)}</span></div>
+        <div class="text-xs text-muted-foreground">SKU ${escapeHtml(product.sku)} - Rate Rs ${escapeHtml(product.rate)}</div>
+      </div>
+    `;
+  };
+
+  const hideEntryPanel = () => {
+    productIdInput.value = "";
+    entryPanel.classList.add("hidden");
+    quantityInput.disabled = true;
+    expiryInput.disabled = true;
+    saveButton.disabled = true;
+    selectedProduct.innerHTML = "";
+    quantityParameter.textContent = "";
+  };
+
+  const renderProductResults = () => {
+    const term = productSearch.value.trim().toLowerCase();
+    hideEntryPanel();
+    if (!term) {
+      productResults.classList.add("hidden");
+      productResults.innerHTML = "";
+      return;
+    }
+    const matches = stockProducts.filter((product) => `${product.name} ${product.sku} ${product.path}`.toLowerCase().includes(term)).slice(0, 12);
+    productResults.innerHTML = matches.length ? matches.map((product, index) => `
+      <button type="button" class="stock-product-option w-full text-left px-3 py-2 hover:bg-muted border-t border-border first:border-t-0" data-index="${index}">
+        <span class="text-sm font-medium">${escapeHtml(product.name)}</span>
+        <span class="ml-2 badge badge-muted">${escapeHtml(product.quantity_label)}</span>
+        <span class="block text-[11px] text-muted-foreground truncate">SKU ${escapeHtml(product.sku)} - ${escapeHtml(product.path)}</span>
+      </button>
+    `).join("") : `<div class="px-3 py-2 text-sm text-muted-foreground">No product found</div>`;
+    productResults.querySelectorAll(".stock-product-option").forEach((button) => {
+      button.addEventListener("click", () => selectStockProduct(matches[Number(button.dataset.index)]));
+    });
+    productResults.classList.remove("hidden");
+  };
+
+  productSearch?.addEventListener("input", renderProductResults);
+  productSearch?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    const term = productSearch.value.trim().toLowerCase();
+    const first = stockProducts.find((product) => `${product.name} ${product.sku} ${product.path}`.toLowerCase().includes(term));
+    if (first) {
+      event.preventDefault();
+      selectStockProduct(first);
+    }
+  });
+  document.getElementById("stock-record-form")?.addEventListener("submit", (event) => {
+    if (!productIdInput.value) {
+      event.preventDefault();
+      productSearch.focus();
+    }
+  });
+</script>
+{% endblock %}
