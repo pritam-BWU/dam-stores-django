@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 
-from .models import AuditLog, DamagedProduct, ProductItem, ProductNode, ProductPriceHistory, Role, Supplier, SupplierTransaction, User
+from .models import AuditLog, Customer, CustomerTransaction, DamagedProduct, NotificationClearance, ProductItem, ProductNode, ProductPriceHistory, Role, Supplier, SupplierTransaction, User
 
 
 @admin.register(Role)
@@ -66,9 +66,23 @@ class SupplierAdmin(admin.ModelAdmin):
 @admin.register(SupplierTransaction)
 class SupplierTransactionAdmin(admin.ModelAdmin):
     list_display = ("transaction_date", "supplier", "outstanding_amount", "paid_amount", "created_by")
-    search_fields = ("supplier__supplier_name", "supplier__mobile_number")
+    search_fields = ("supplier__supplier_name", "supplier__mobile_number", "note")
     list_filter = ("transaction_date",)
     autocomplete_fields = ("supplier", "created_by")
+
+
+@admin.register(Customer)
+class CustomerAdmin(admin.ModelAdmin):
+    list_display = ("customer_name", "mobile_number", "created_at", "updated_at")
+    search_fields = ("customer_name", "mobile_number", "address")
+
+
+@admin.register(CustomerTransaction)
+class CustomerTransactionAdmin(admin.ModelAdmin):
+    list_display = ("transaction_date", "customer", "customer_paid_amount", "you_got_amount", "created_by")
+    search_fields = ("customer__customer_name", "customer__mobile_number", "note")
+    list_filter = ("transaction_date",)
+    autocomplete_fields = ("customer", "created_by")
 
 
 @admin.register(AuditLog)
@@ -77,3 +91,10 @@ class AuditLogAdmin(admin.ModelAdmin):
     list_filter = ("action", "model_name", "created_at")
     search_fields = ("object_label", "model_name", "object_id", "user__username", "user__name")
     readonly_fields = ("created_at",)
+
+
+@admin.register(NotificationClearance)
+class NotificationClearanceAdmin(admin.ModelAdmin):
+    list_display = ("user", "clear_before", "updated_at")
+    search_fields = ("user__username", "user__name")
+    readonly_fields = ("updated_at",)

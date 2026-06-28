@@ -123,6 +123,9 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
+# Large product/category submissions can include many repeated form fields.
+DATA_UPLOAD_MAX_NUMBER_FIELDS = 20000
+
 AUTH_USER_MODEL = 'Dam_stores.User'
 LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = 'dashboard'

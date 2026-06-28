@@ -189,7 +189,7 @@ class DailySalesRecord(TimeStampedModel):
 
 class Supplier(TimeStampedModel):
     supplier_name = models.CharField(max_length=180)
-    mobile_number = models.CharField(max_length=20)
+    mobile_number = models.CharField(max_length=20, blank=True)
     address = models.TextField(blank=True)
 
     class Meta:
@@ -203,7 +203,7 @@ class Supplier(TimeStampedModel):
         ]
 
     def __str__(self) -> str:
-        return f"{self.supplier_name} ({self.mobile_number})"
+        return f"{self.supplier_name} ({self.mobile_number})" if self.mobile_number else self.supplier_name
 
 
 class SupplierTransaction(TimeStampedModel):
@@ -211,6 +211,8 @@ class SupplierTransaction(TimeStampedModel):
     transaction_date = models.DateField()
     outstanding_amount = models.DecimalField(max_digits=14, decimal_places=2)
     paid_amount = models.DecimalField(max_digits=14, decimal_places=2)
+    note = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="created_supplier_transactions")
 
     class Meta:
@@ -222,6 +224,45 @@ class SupplierTransaction(TimeStampedModel):
 
     def __str__(self) -> str:
         return f"{self.supplier} {self.transaction_date}"
+
+
+class Customer(TimeStampedModel):
+    customer_name = models.CharField(max_length=180)
+    mobile_number = models.CharField(max_length=20, blank=True)
+    address = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["customer_name"]
+        indexes = [
+            models.Index(fields=["customer_name"]),
+            models.Index(fields=["mobile_number"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(fields=["customer_name", "mobile_number"], name="unique_customer_name_mobile"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.customer_name} ({self.mobile_number})" if self.mobile_number else self.customer_name
+
+
+class CustomerTransaction(TimeStampedModel):
+    customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name="transactions")
+    transaction_date = models.DateField()
+    customer_paid_amount = models.DecimalField(max_digits=14, decimal_places=2)
+    you_got_amount = models.DecimalField(max_digits=14, decimal_places=2)
+    note = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="created_customer_transactions")
+
+    class Meta:
+        ordering = ["-transaction_date", "-created_at"]
+        indexes = [
+            models.Index(fields=["customer"]),
+            models.Index(fields=["transaction_date"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.customer} {self.transaction_date}"
 
 
 class AuditLog(models.Model):
@@ -277,3 +318,18 @@ class InAppNotification(models.Model):
 
     def __str__(self) -> str:
         return self.message
+
+
+class NotificationClearance(models.Model):
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="notification_clearance")
+    clear_before = models.DateTimeField()
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["user"]),
+            models.Index(fields=["clear_before"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.user} cleared before {self.clear_before}"

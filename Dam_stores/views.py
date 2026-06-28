@@ -20,7 +20,7 @@ from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 
 from . import data
-from .models import AuditLog, DailySalesRecord, DamagedProduct, ProductItem, ProductNode, ProductPriceHistory, ProductStockEntry, Role, Supplier, SupplierTransaction, User
+from .models import AuditLog, Customer, CustomerTransaction, DailySalesRecord, DamagedProduct, NotificationClearance, ProductItem, ProductNode, ProductPriceHistory, ProductStockEntry, Role, Supplier, SupplierTransaction, User
 
 
 MASTER_QUANTITY_UNITS = {
@@ -79,6 +79,7 @@ NAV_GROUPS = [
         "group": "Finance",
         "items": [
             {"id": "suppliers", "href": "/suppliers/", "label": "Suppliers", "icon": "truck"},
+            {"id": "customers", "href": "/customers/", "label": "Customers", "icon": "users-round"},
         ],
     },
     {
@@ -139,6 +140,16 @@ def logout_view(request):
         )
     logout(request)
     return redirect("login")
+
+
+@login_required
+def clear_notifications(request):
+    if request.method == "POST":
+        NotificationClearance.objects.update_or_create(
+            user=request.user,
+            defaults={"clear_before": timezone.now()},
+        )
+    return redirect(request.META.get("HTTP_REFERER") or "dashboard")
 
 
 @login_required
@@ -2058,13 +2069,17 @@ def suppliers(request):
             messages.error(request, str(exc))
 
     query = request.GET.get("q", "").strip()
-    rows = Supplier.objects.annotate(total_outstanding=Sum("transactions__outstanding_amount")).order_by("supplier_name")
+    rows = Supplier.objects.annotate(
+        total_outstanding=Sum("transactions__outstanding_amount", filter=Q(transactions__is_active=True)),
+        total_paid=Sum("transactions__paid_amount", filter=Q(transactions__is_active=True)),
+    ).order_by("supplier_name")
     if query:
         rows = rows.filter(Q(supplier_name__icontains=query) | Q(mobile_number__icontains=query))
     paginator = Paginator(rows, 50)
     supplier_page = paginator.get_page(request.GET.get("page") or 1)
     for supplier in supplier_page.object_list:
-        supplier.total_outstanding_label = data.format_bdt(supplier.total_outstanding or Decimal("0"))
+        remaining = (supplier.total_outstanding or Decimal("0")) - (supplier.total_paid or Decimal("0"))
+        supplier.total_outstanding_label = _format_supplier_amount(remaining)
 
     supplier_options = [_supplier_payload(supplier) for supplier in Supplier.objects.order_by("supplier_name")]
     context = {
@@ -2084,9 +2099,28 @@ def supplier_detail(request, supplier_id: int):
         messages.error(request, "Supplier not found.")
         return redirect("suppliers")
 
+    if request.method == "POST":
+        try:
+            action = request.POST.get("action", "")
+            if action == "update_supplier_transaction":
+                _update_supplier_transaction_from_request(request, supplier)
+                messages.success(request, "Supplier entry updated successfully.")
+            elif action == "delete_supplier_transaction":
+                _delete_supplier_transaction_from_request(request, supplier)
+                messages.success(request, "Supplier entry deleted successfully.")
+            else:
+                raise ValueError("Unsupported supplier action.")
+            redirect_url = request.path
+            if request.GET.urlencode():
+                redirect_url = f"{redirect_url}?{request.GET.urlencode()}"
+            return redirect(redirect_url)
+        except (ValueError, IntegrityError) as exc:
+            messages.error(request, str(exc))
+
     filter_start = parse_date(request.GET.get("start", ""))
     filter_end = parse_date(request.GET.get("end", ""))
-    transactions = supplier.transactions.select_related("created_by").all()
+    all_transactions = supplier.transactions.select_related("created_by").filter(is_active=True)
+    transactions = all_transactions
     if filter_start and filter_end:
         if filter_start > filter_end:
             filter_start, filter_end = filter_end, filter_start
@@ -2097,29 +2131,76 @@ def supplier_detail(request, supplier_id: int):
         filter_start = single_date
         filter_end = single_date
 
-    totals = transactions.aggregate(outstanding=Sum("outstanding_amount"), paid=Sum("paid_amount"))
-    paginator = Paginator(transactions, 50)
+    totals = all_transactions.aggregate(outstanding=Sum("outstanding_amount"), paid=Sum("paid_amount"))
+    total_outstanding_value = totals["outstanding"] or Decimal("0")
+    total_paid_value = totals["paid"] or Decimal("0")
+    remaining_outstanding_value = total_outstanding_value - total_paid_value
+
+    balance_by_id = {}
+    running_balance = Decimal("0")
+    for row in reversed(list(all_transactions)):
+        running_balance += (row.outstanding_amount or Decimal("0")) - (row.paid_amount or Decimal("0"))
+        balance_by_id[row.id] = running_balance
+
+    transaction_rows = list(transactions)
+    for row in transaction_rows:
+        row.balance_after = balance_by_id.get(row.id, Decimal("0"))
+        row.balance_after_label = _format_supplier_amount(row.balance_after)
+        row.outstanding_label = _format_supplier_amount(row.outstanding_amount or Decimal("0"))
+        row.paid_label = _format_supplier_amount(row.paid_amount or Decimal("0"))
+        row.entry_type = _supplier_transaction_type(row)
+        row.entry_amount = row.paid_amount if row.entry_type == "paid" else row.outstanding_amount
+        row.entry_amount_label = _format_supplier_amount(row.entry_amount or Decimal("0"))
+
+    paginator = Paginator(transaction_rows, 50)
     transaction_page = paginator.get_page(request.GET.get("page") or 1)
+    transaction_options = [_supplier_transaction_payload(row) for row in transaction_page.object_list]
     context = {
         **_base("suppliers", "Supplier Detail"),
         "supplier": supplier,
         "transaction_page": transaction_page,
+        "transaction_options_json": json.dumps(transaction_options),
         "filter_start": filter_start,
         "filter_end": filter_end,
-        "total_outstanding": data.format_bdt(totals["outstanding"] or Decimal("0")),
-        "total_paid": data.format_bdt(totals["paid"] or Decimal("0")),
+        "total_outstanding": _format_supplier_amount(total_outstanding_value),
+        "total_paid": _format_supplier_amount(total_paid_value),
+        "remaining_outstanding": _format_supplier_amount(remaining_outstanding_value),
     }
     return render(request, "stock_management/pages/supplier_detail.html", context)
 
 
 def _supplier_payload(supplier: Supplier) -> dict:
+    label = f"{supplier.supplier_name} - {supplier.mobile_number}" if supplier.mobile_number else supplier.supplier_name
     return {
         "id": supplier.id,
         "supplier_name": supplier.supplier_name,
         "mobile_number": supplier.mobile_number,
         "address": supplier.address,
-        "label": f"{supplier.supplier_name} - {supplier.mobile_number}",
+        "label": label,
     }
+
+
+def _format_supplier_amount(value: Decimal) -> str:
+    value = Decimal(value or Decimal("0"))
+    formatted = f"{value:,.2f}".rstrip("0").rstrip(".")
+    return f"Rs {formatted}"
+
+
+def _supplier_transaction_type(row: SupplierTransaction) -> str:
+    if (row.paid_amount or Decimal("0")) > 0 and (row.outstanding_amount or Decimal("0")) <= 0:
+        return "paid"
+    return "outstanding"
+
+
+def _supplier_transaction_amounts(transaction_type: str, amount: Decimal) -> tuple[Decimal, Decimal]:
+    transaction_type = (transaction_type or "").strip().lower()
+    if transaction_type not in {"outstanding", "paid"}:
+        raise ValueError("Select Outstanding or You Paid.")
+    if amount <= 0:
+        raise ValueError("Amount must be greater than zero.")
+    if transaction_type == "outstanding":
+        return amount, Decimal("0")
+    return Decimal("0"), amount
 
 
 @transaction.atomic
@@ -2128,10 +2209,8 @@ def _create_supplier_from_request(request) -> Supplier:
     mobile_number = request.POST.get("mobile_number", "").strip()
     if not supplier_name:
         raise ValueError("Supplier name is required.")
-    if not mobile_number:
-        raise ValueError("Mobile number is required.")
     if Supplier.objects.filter(supplier_name__iexact=supplier_name, mobile_number__iexact=mobile_number).exists():
-        raise ValueError("This supplier with this mobile number already exists.")
+        raise ValueError("This supplier already exists.")
     return Supplier.objects.create(
         supplier_name=supplier_name,
         mobile_number=mobile_number,
@@ -2148,17 +2227,44 @@ def _create_supplier_transaction_from_request(request) -> SupplierTransaction:
     if not supplier:
         raise ValueError("Selected supplier does not exist.")
     transaction_date = parse_date(request.POST.get("transaction_date", "")) or timezone.localdate()
-    outstanding_amount = _decimal_from_post(request, "outstanding_amount", required=True)
-    paid_amount = _decimal_from_post(request, "paid_amount", required=True)
-    if outstanding_amount < 0 or paid_amount < 0:
-        raise ValueError("Supplier amounts cannot be negative.")
+    amount = _decimal_from_post(request, "amount", required=True)
+    outstanding_amount, paid_amount = _supplier_transaction_amounts(request.POST.get("transaction_type", ""), amount)
     return SupplierTransaction.objects.create(
         supplier=supplier,
         transaction_date=transaction_date,
         outstanding_amount=outstanding_amount,
         paid_amount=paid_amount,
+        note=request.POST.get("note", "").strip(),
         created_by=request.user,
     )
+
+
+@transaction.atomic
+def _update_supplier_transaction_from_request(request, supplier: Supplier) -> SupplierTransaction:
+    transaction_id = request.POST.get("transaction_id", "").strip()
+    row = supplier.transactions.filter(pk=transaction_id, is_active=True).first()
+    if not row:
+        raise ValueError("Supplier entry not found.")
+    transaction_date = parse_date(request.POST.get("transaction_date", "")) or row.transaction_date
+    amount = _decimal_from_post(request, "amount", required=True)
+    outstanding_amount, paid_amount = _supplier_transaction_amounts(request.POST.get("transaction_type", ""), amount)
+    row.transaction_date = transaction_date
+    row.outstanding_amount = outstanding_amount
+    row.paid_amount = paid_amount
+    row.note = request.POST.get("note", "").strip()
+    row.save()
+    return row
+
+
+@transaction.atomic
+def _delete_supplier_transaction_from_request(request, supplier: Supplier) -> SupplierTransaction:
+    transaction_id = request.POST.get("transaction_id", "").strip()
+    row = supplier.transactions.filter(pk=transaction_id, is_active=True).first()
+    if not row:
+        raise ValueError("Supplier entry not found.")
+    row.is_active = False
+    row.save(update_fields=["is_active", "updated_at"])
+    return row
 
 
 def _request_payload(request) -> dict:
@@ -2261,13 +2367,18 @@ def api_damaged_products(request, pk: int | None = None):
 
 
 def _supplier_transaction_payload(row: SupplierTransaction) -> dict:
+    transaction_type = _supplier_transaction_type(row)
+    amount = row.paid_amount if transaction_type == "paid" else row.outstanding_amount
     return {
         "id": row.id,
         "supplier_id": row.supplier_id,
         "supplier_name": row.supplier.supplier_name,
         "transaction_date": row.transaction_date.isoformat(),
+        "transaction_type": transaction_type,
+        "amount": _json_decimal(amount),
         "outstanding_amount": _json_decimal(row.outstanding_amount),
         "paid_amount": _json_decimal(row.paid_amount),
+        "note": row.note,
         "created_by": row.created_by.name or row.created_by.username,
         "created_at": timezone.localtime(row.created_at).strftime("%Y-%m-%d %H:%M"),
     }
@@ -2282,14 +2393,18 @@ def api_suppliers(request, pk: int | None = None):
                 supplier = Supplier.objects.filter(pk=pk).first()
                 if not supplier:
                     return _json_error("Supplier not found.", 404)
-                totals = supplier.transactions.aggregate(outstanding=Sum("outstanding_amount"), paid=Sum("paid_amount"))
+                totals = supplier.transactions.filter(is_active=True).aggregate(outstanding=Sum("outstanding_amount"), paid=Sum("paid_amount"))
                 payload = _supplier_payload(supplier)
                 payload["totals"] = {
                     "outstanding_amount": _json_decimal(totals["outstanding"]),
                     "paid_amount": _json_decimal(totals["paid"]),
+                    "remaining_outstanding": _json_decimal((totals["outstanding"] or Decimal("0")) - (totals["paid"] or Decimal("0"))),
                 }
                 return JsonResponse({"ok": True, "data": payload})
-            rows = Supplier.objects.annotate(total_outstanding=Sum("transactions__outstanding_amount"), total_paid=Sum("transactions__paid_amount"))
+            rows = Supplier.objects.annotate(
+                total_outstanding=Sum("transactions__outstanding_amount", filter=Q(transactions__is_active=True)),
+                total_paid=Sum("transactions__paid_amount", filter=Q(transactions__is_active=True)),
+            )
             query = request.GET.get("q", "").strip()
             if query:
                 rows = rows.filter(Q(supplier_name__icontains=query) | Q(mobile_number__icontains=query))
@@ -2299,6 +2414,7 @@ def api_suppliers(request, pk: int | None = None):
                 row = _supplier_payload(supplier)
                 row["total_outstanding"] = _json_decimal(supplier.total_outstanding)
                 row["total_paid"] = _json_decimal(supplier.total_paid)
+                row["remaining_outstanding"] = _json_decimal((supplier.total_outstanding or Decimal("0")) - (supplier.total_paid or Decimal("0")))
                 results.append(row)
             return JsonResponse({"ok": True, "results": results, "pagination": _pagination_payload(page)})
         payload = _request_payload(request)
@@ -2307,10 +2423,8 @@ def api_suppliers(request, pk: int | None = None):
             mobile = str(payload.get("mobile_number") or "").strip()
             if not name:
                 raise ValueError("Supplier name is required.")
-            if not mobile:
-                raise ValueError("Mobile number is required.")
             if Supplier.objects.filter(supplier_name__iexact=name, mobile_number__iexact=mobile).exists():
-                raise ValueError("This supplier with this mobile number already exists.")
+                raise ValueError("This supplier already exists.")
             supplier = Supplier.objects.create(supplier_name=name, mobile_number=mobile, address=str(payload.get("address") or "").strip())
             return JsonResponse({"ok": True, "data": _supplier_payload(supplier)}, status=201)
         if request.method in {"PUT", "PATCH"} and pk:
@@ -2321,10 +2435,8 @@ def api_suppliers(request, pk: int | None = None):
             mobile = str(payload.get("mobile_number", supplier.mobile_number) or "").strip()
             if not name:
                 raise ValueError("Supplier name is required.")
-            if not mobile:
-                raise ValueError("Mobile number is required.")
             if Supplier.objects.exclude(pk=supplier.pk).filter(supplier_name__iexact=name, mobile_number__iexact=mobile).exists():
-                raise ValueError("This supplier with this mobile number already exists.")
+                raise ValueError("This supplier already exists.")
             supplier.supplier_name = name
             supplier.mobile_number = mobile
             supplier.address = str(payload.get("address", supplier.address) or "").strip()
@@ -2347,11 +2459,11 @@ def api_supplier_transactions(request, pk: int | None = None):
     try:
         if request.method == "GET":
             if pk:
-                row = SupplierTransaction.objects.select_related("supplier", "created_by").filter(pk=pk).first()
+                row = SupplierTransaction.objects.select_related("supplier", "created_by").filter(pk=pk, is_active=True).first()
                 if not row:
                     return _json_error("Supplier transaction not found.", 404)
                 return JsonResponse({"ok": True, "data": _supplier_transaction_payload(row)})
-            rows = SupplierTransaction.objects.select_related("supplier", "created_by").all()
+            rows = SupplierTransaction.objects.select_related("supplier", "created_by").filter(is_active=True)
             supplier_id = request.GET.get("supplier_id", "").strip()
             start = parse_date(request.GET.get("start", ""))
             end = parse_date(request.GET.get("end", ""))
@@ -2383,14 +2495,25 @@ def api_supplier_transactions(request, pk: int | None = None):
             if not supplier:
                 raise ValueError("Select a supplier.")
             transaction_date = parse_date(str(payload.get("transaction_date") or "")) or timezone.localdate()
-            outstanding = _decimal_from_value(payload.get("outstanding_amount"), "Outstanding Amount", required=True)
-            paid = _decimal_from_value(payload.get("paid_amount"), "Paid Amount", required=True)
-            if outstanding < 0 or paid < 0:
-                raise ValueError("Supplier amounts cannot be negative.")
-            row = SupplierTransaction.objects.create(supplier=supplier, transaction_date=transaction_date, outstanding_amount=outstanding, paid_amount=paid, created_by=request.user)
+            if payload.get("transaction_type"):
+                amount = _decimal_from_value(payload.get("amount"), "Amount", required=True)
+                outstanding, paid = _supplier_transaction_amounts(str(payload.get("transaction_type") or ""), amount)
+            else:
+                outstanding = _decimal_from_value(payload.get("outstanding_amount"), "Outstanding Amount", required=True)
+                paid = _decimal_from_value(payload.get("paid_amount"), "Paid Amount", required=True)
+                if outstanding < 0 or paid < 0:
+                    raise ValueError("Supplier amounts cannot be negative.")
+            row = SupplierTransaction.objects.create(
+                supplier=supplier,
+                transaction_date=transaction_date,
+                outstanding_amount=outstanding,
+                paid_amount=paid,
+                note=str(payload.get("note") or "").strip(),
+                created_by=request.user,
+            )
             return JsonResponse({"ok": True, "data": _supplier_transaction_payload(row)}, status=201)
         if request.method in {"PUT", "PATCH"} and pk:
-            row = SupplierTransaction.objects.filter(pk=pk).first()
+            row = SupplierTransaction.objects.filter(pk=pk, is_active=True).first()
             if not row:
                 return _json_error("Supplier transaction not found.", 404)
             supplier_id = str(payload.get("supplier_id") or row.supplier_id).strip()
@@ -2398,21 +2521,422 @@ def api_supplier_transactions(request, pk: int | None = None):
             if not supplier:
                 raise ValueError("Select a supplier.")
             transaction_date = parse_date(str(payload.get("transaction_date") or "")) or row.transaction_date
-            outstanding = _decimal_from_value(payload.get("outstanding_amount", row.outstanding_amount), "Outstanding Amount", required=True)
-            paid = _decimal_from_value(payload.get("paid_amount", row.paid_amount), "Paid Amount", required=True)
-            if outstanding < 0 or paid < 0:
-                raise ValueError("Supplier amounts cannot be negative.")
+            if payload.get("transaction_type"):
+                amount = _decimal_from_value(payload.get("amount"), "Amount", required=True)
+                outstanding, paid = _supplier_transaction_amounts(str(payload.get("transaction_type") or ""), amount)
+            else:
+                outstanding = _decimal_from_value(payload.get("outstanding_amount", row.outstanding_amount), "Outstanding Amount", required=True)
+                paid = _decimal_from_value(payload.get("paid_amount", row.paid_amount), "Paid Amount", required=True)
+                if outstanding < 0 or paid < 0:
+                    raise ValueError("Supplier amounts cannot be negative.")
             row.supplier = supplier
             row.transaction_date = transaction_date
             row.outstanding_amount = outstanding
             row.paid_amount = paid
+            row.note = str(payload.get("note", row.note) or "").strip()
             row.save()
             return JsonResponse({"ok": True, "data": _supplier_transaction_payload(row)})
         if request.method == "DELETE" and pk:
-            row = SupplierTransaction.objects.filter(pk=pk).first()
+            row = SupplierTransaction.objects.filter(pk=pk, is_active=True).first()
             if not row:
                 return _json_error("Supplier transaction not found.", 404)
-            row.delete()
+            row.is_active = False
+            row.save(update_fields=["is_active", "updated_at"])
+            return JsonResponse({"ok": True})
+        return _json_error("Unsupported method.", 405)
+    except (ValueError, IntegrityError) as exc:
+        return _json_error(str(exc))
+
+
+@login_required
+def customers(request):
+    if request.method == "POST":
+        action = request.POST.get("action", "create_customer")
+        try:
+            if action == "create_customer":
+                _create_customer_from_request(request)
+                messages.success(request, "Customer added successfully.")
+            elif action == "create_customer_transaction":
+                _create_customer_transaction_from_request(request)
+                messages.success(request, "Customer data added successfully.")
+            else:
+                raise ValueError("Unsupported customer action.")
+            return redirect("customers")
+        except (ValueError, IntegrityError) as exc:
+            messages.error(request, str(exc))
+
+    query = request.GET.get("q", "").strip()
+    rows = Customer.objects.annotate(
+        total_customer_paid=Sum("transactions__customer_paid_amount", filter=Q(transactions__is_active=True)),
+        total_you_got=Sum("transactions__you_got_amount", filter=Q(transactions__is_active=True)),
+    ).order_by("customer_name")
+    if query:
+        rows = rows.filter(Q(customer_name__icontains=query) | Q(mobile_number__icontains=query))
+    paginator = Paginator(rows, 50)
+    customer_page = paginator.get_page(request.GET.get("page") or 1)
+    for customer in customer_page.object_list:
+        remaining = (customer.total_you_got or Decimal("0")) - (customer.total_customer_paid or Decimal("0"))
+        customer.remaining_you_got_label = _format_supplier_amount(remaining)
+
+    customer_options = [_customer_payload(customer) for customer in Customer.objects.order_by("customer_name")]
+    context = {
+        **_base("customers", "Customers"),
+        "customer_page": customer_page,
+        "query": query,
+        "customer_options_json": json.dumps(customer_options),
+        "today": timezone.localdate(),
+    }
+    return render(request, "stock_management/pages/customers.html", context)
+
+
+@login_required
+def customer_detail(request, customer_id: int):
+    customer = Customer.objects.filter(pk=customer_id).first()
+    if not customer:
+        messages.error(request, "Customer not found.")
+        return redirect("customers")
+
+    if request.method == "POST":
+        try:
+            action = request.POST.get("action", "")
+            if action == "update_customer_transaction":
+                _update_customer_transaction_from_request(request, customer)
+                messages.success(request, "Customer entry updated successfully.")
+            elif action == "delete_customer_transaction":
+                _delete_customer_transaction_from_request(request, customer)
+                messages.success(request, "Customer entry deleted successfully.")
+            else:
+                raise ValueError("Unsupported customer action.")
+            redirect_url = request.path
+            if request.GET.urlencode():
+                redirect_url = f"{redirect_url}?{request.GET.urlencode()}"
+            return redirect(redirect_url)
+        except (ValueError, IntegrityError) as exc:
+            messages.error(request, str(exc))
+
+    filter_start = parse_date(request.GET.get("start", ""))
+    filter_end = parse_date(request.GET.get("end", ""))
+    all_transactions = customer.transactions.select_related("created_by").filter(is_active=True)
+    transactions = all_transactions
+    if filter_start and filter_end:
+        if filter_start > filter_end:
+            filter_start, filter_end = filter_end, filter_start
+        transactions = transactions.filter(transaction_date__range=(filter_start, filter_end))
+    elif filter_start or filter_end:
+        single_date = filter_start or filter_end
+        transactions = transactions.filter(transaction_date=single_date)
+        filter_start = single_date
+        filter_end = single_date
+
+    totals = all_transactions.aggregate(customer_paid=Sum("customer_paid_amount"), you_got=Sum("you_got_amount"))
+    total_customer_paid_value = totals["customer_paid"] or Decimal("0")
+    total_you_got_value = totals["you_got"] or Decimal("0")
+    remaining_you_got_value = total_you_got_value - total_customer_paid_value
+
+    balance_by_id = {}
+    running_balance = Decimal("0")
+    for row in reversed(list(all_transactions)):
+        running_balance += (row.you_got_amount or Decimal("0")) - (row.customer_paid_amount or Decimal("0"))
+        balance_by_id[row.id] = running_balance
+
+    transaction_rows = list(transactions)
+    for row in transaction_rows:
+        row.balance_after = balance_by_id.get(row.id, Decimal("0"))
+        row.balance_after_label = _format_supplier_amount(row.balance_after)
+        row.customer_paid_label = _format_supplier_amount(row.customer_paid_amount or Decimal("0"))
+        row.you_got_label = _format_supplier_amount(row.you_got_amount or Decimal("0"))
+        row.entry_type = _customer_transaction_type(row)
+        row.entry_amount = row.you_got_amount if row.entry_type == "you_got" else row.customer_paid_amount
+        row.entry_amount_label = _format_supplier_amount(row.entry_amount or Decimal("0"))
+
+    paginator = Paginator(transaction_rows, 50)
+    transaction_page = paginator.get_page(request.GET.get("page") or 1)
+    transaction_options = [_customer_transaction_payload(row) for row in transaction_page.object_list]
+    context = {
+        **_base("customers", "Customer Detail"),
+        "customer": customer,
+        "transaction_page": transaction_page,
+        "transaction_options_json": json.dumps(transaction_options),
+        "filter_start": filter_start,
+        "filter_end": filter_end,
+        "total_customer_paid": _format_supplier_amount(total_customer_paid_value),
+        "total_you_got": _format_supplier_amount(total_you_got_value),
+        "remaining_customer_paid": _format_supplier_amount(remaining_you_got_value),
+        "remaining_you_got": _format_supplier_amount(remaining_you_got_value),
+    }
+    return render(request, "stock_management/pages/customer_detail.html", context)
+
+
+def _customer_payload(customer: Customer) -> dict:
+    label = f"{customer.customer_name} - {customer.mobile_number}" if customer.mobile_number else customer.customer_name
+    return {
+        "id": customer.id,
+        "customer_name": customer.customer_name,
+        "mobile_number": customer.mobile_number,
+        "address": customer.address,
+        "label": label,
+    }
+
+
+def _customer_transaction_type(row: CustomerTransaction) -> str:
+    if (row.you_got_amount or Decimal("0")) > 0 and (row.customer_paid_amount or Decimal("0")) <= 0:
+        return "you_got"
+    return "customer_paid"
+
+
+def _customer_transaction_amounts(transaction_type: str, amount: Decimal) -> tuple[Decimal, Decimal]:
+    transaction_type = (transaction_type or "").strip().lower()
+    if transaction_type not in {"customer_paid", "you_got"}:
+        raise ValueError("Select Customer Paid or You Got.")
+    if amount <= 0:
+        raise ValueError("Amount must be greater than zero.")
+    if transaction_type == "customer_paid":
+        return amount, Decimal("0")
+    return Decimal("0"), amount
+
+
+@transaction.atomic
+def _create_customer_from_request(request) -> Customer:
+    customer_name = request.POST.get("customer_name", "").strip()
+    mobile_number = request.POST.get("mobile_number", "").strip()
+    if not customer_name:
+        raise ValueError("Customer name is required.")
+    if Customer.objects.filter(customer_name__iexact=customer_name, mobile_number__iexact=mobile_number).exists():
+        raise ValueError("This customer already exists.")
+    return Customer.objects.create(
+        customer_name=customer_name,
+        mobile_number=mobile_number,
+        address=request.POST.get("address", "").strip(),
+    )
+
+
+@transaction.atomic
+def _create_customer_transaction_from_request(request) -> CustomerTransaction:
+    customer_id = request.POST.get("customer_id", "").strip()
+    if not customer_id:
+        raise ValueError("Select a customer.")
+    customer = Customer.objects.filter(pk=customer_id).first()
+    if not customer:
+        raise ValueError("Selected customer does not exist.")
+    transaction_date = parse_date(request.POST.get("transaction_date", "")) or timezone.localdate()
+    amount = _decimal_from_post(request, "amount", required=True)
+    customer_paid_amount, you_got_amount = _customer_transaction_amounts(request.POST.get("transaction_type", ""), amount)
+    return CustomerTransaction.objects.create(
+        customer=customer,
+        transaction_date=transaction_date,
+        customer_paid_amount=customer_paid_amount,
+        you_got_amount=you_got_amount,
+        note=request.POST.get("note", "").strip(),
+        created_by=request.user,
+    )
+
+
+@transaction.atomic
+def _update_customer_transaction_from_request(request, customer: Customer) -> CustomerTransaction:
+    transaction_id = request.POST.get("transaction_id", "").strip()
+    row = customer.transactions.filter(pk=transaction_id, is_active=True).first()
+    if not row:
+        raise ValueError("Customer entry not found.")
+    transaction_date = parse_date(request.POST.get("transaction_date", "")) or row.transaction_date
+    amount = _decimal_from_post(request, "amount", required=True)
+    customer_paid_amount, you_got_amount = _customer_transaction_amounts(request.POST.get("transaction_type", ""), amount)
+    row.transaction_date = transaction_date
+    row.customer_paid_amount = customer_paid_amount
+    row.you_got_amount = you_got_amount
+    row.note = request.POST.get("note", "").strip()
+    row.save()
+    return row
+
+
+@transaction.atomic
+def _delete_customer_transaction_from_request(request, customer: Customer) -> CustomerTransaction:
+    transaction_id = request.POST.get("transaction_id", "").strip()
+    row = customer.transactions.filter(pk=transaction_id, is_active=True).first()
+    if not row:
+        raise ValueError("Customer entry not found.")
+    row.is_active = False
+    row.save(update_fields=["is_active", "updated_at"])
+    return row
+
+
+def _customer_transaction_payload(row: CustomerTransaction) -> dict:
+    transaction_type = _customer_transaction_type(row)
+    amount = row.you_got_amount if transaction_type == "you_got" else row.customer_paid_amount
+    return {
+        "id": row.id,
+        "customer_id": row.customer_id,
+        "customer_name": row.customer.customer_name,
+        "transaction_date": row.transaction_date.isoformat(),
+        "transaction_type": transaction_type,
+        "amount": _json_decimal(amount),
+        "customer_paid_amount": _json_decimal(row.customer_paid_amount),
+        "you_got_amount": _json_decimal(row.you_got_amount),
+        "note": row.note,
+        "created_by": row.created_by.name or row.created_by.username,
+        "created_at": timezone.localtime(row.created_at).strftime("%Y-%m-%d %H:%M"),
+    }
+
+
+@csrf_exempt
+@login_required
+def api_customers(request, pk: int | None = None):
+    try:
+        if request.method == "GET":
+            if pk:
+                customer = Customer.objects.filter(pk=pk).first()
+                if not customer:
+                    return _json_error("Customer not found.", 404)
+                totals = customer.transactions.filter(is_active=True).aggregate(customer_paid=Sum("customer_paid_amount"), you_got=Sum("you_got_amount"))
+                payload = _customer_payload(customer)
+                payload["totals"] = {
+                    "customer_paid_amount": _json_decimal(totals["customer_paid"]),
+                    "you_got_amount": _json_decimal(totals["you_got"]),
+                    "remaining_customer_paid": _json_decimal((totals["you_got"] or Decimal("0")) - (totals["customer_paid"] or Decimal("0"))),
+                    "remaining_you_got": _json_decimal((totals["you_got"] or Decimal("0")) - (totals["customer_paid"] or Decimal("0"))),
+                }
+                return JsonResponse({"ok": True, "data": payload})
+            rows = Customer.objects.annotate(
+                total_customer_paid=Sum("transactions__customer_paid_amount", filter=Q(transactions__is_active=True)),
+                total_you_got=Sum("transactions__you_got_amount", filter=Q(transactions__is_active=True)),
+            )
+            query = request.GET.get("q", "").strip()
+            if query:
+                rows = rows.filter(Q(customer_name__icontains=query) | Q(mobile_number__icontains=query))
+            page = Paginator(rows.order_by("customer_name"), int(request.GET.get("page_size") or 50)).get_page(request.GET.get("page") or 1)
+            results = []
+            for customer in page.object_list:
+                row = _customer_payload(customer)
+                row["total_customer_paid"] = _json_decimal(customer.total_customer_paid)
+                row["total_you_got"] = _json_decimal(customer.total_you_got)
+                row["remaining_customer_paid"] = _json_decimal((customer.total_you_got or Decimal("0")) - (customer.total_customer_paid or Decimal("0")))
+                row["remaining_you_got"] = row["remaining_customer_paid"]
+                results.append(row)
+            return JsonResponse({"ok": True, "results": results, "pagination": _pagination_payload(page)})
+        payload = _request_payload(request)
+        if request.method == "POST":
+            name = str(payload.get("customer_name") or "").strip()
+            mobile = str(payload.get("mobile_number") or "").strip()
+            if not name:
+                raise ValueError("Customer name is required.")
+            if Customer.objects.filter(customer_name__iexact=name, mobile_number__iexact=mobile).exists():
+                raise ValueError("This customer already exists.")
+            customer = Customer.objects.create(customer_name=name, mobile_number=mobile, address=str(payload.get("address") or "").strip())
+            return JsonResponse({"ok": True, "data": _customer_payload(customer)}, status=201)
+        if request.method in {"PUT", "PATCH"} and pk:
+            customer = Customer.objects.filter(pk=pk).first()
+            if not customer:
+                return _json_error("Customer not found.", 404)
+            name = str(payload.get("customer_name", customer.customer_name) or "").strip()
+            mobile = str(payload.get("mobile_number", customer.mobile_number) or "").strip()
+            if not name:
+                raise ValueError("Customer name is required.")
+            if Customer.objects.exclude(pk=customer.pk).filter(customer_name__iexact=name, mobile_number__iexact=mobile).exists():
+                raise ValueError("This customer already exists.")
+            customer.customer_name = name
+            customer.mobile_number = mobile
+            customer.address = str(payload.get("address", customer.address) or "").strip()
+            customer.save()
+            return JsonResponse({"ok": True, "data": _customer_payload(customer)})
+        if request.method == "DELETE" and pk:
+            customer = Customer.objects.filter(pk=pk).first()
+            if not customer:
+                return _json_error("Customer not found.", 404)
+            customer.delete()
+            return JsonResponse({"ok": True})
+        return _json_error("Unsupported method.", 405)
+    except (ValueError, IntegrityError) as exc:
+        return _json_error(str(exc))
+
+
+@csrf_exempt
+@login_required
+def api_customer_transactions(request, pk: int | None = None):
+    try:
+        if request.method == "GET":
+            if pk:
+                row = CustomerTransaction.objects.select_related("customer", "created_by").filter(pk=pk, is_active=True).first()
+                if not row:
+                    return _json_error("Customer transaction not found.", 404)
+                return JsonResponse({"ok": True, "data": _customer_transaction_payload(row)})
+            rows = CustomerTransaction.objects.select_related("customer", "created_by").filter(is_active=True)
+            customer_id = request.GET.get("customer_id", "").strip()
+            start = parse_date(request.GET.get("start", ""))
+            end = parse_date(request.GET.get("end", ""))
+            if customer_id:
+                rows = rows.filter(customer_id=customer_id)
+            if start and end:
+                if start > end:
+                    start, end = end, start
+                rows = rows.filter(transaction_date__range=(start, end))
+            elif start or end:
+                rows = rows.filter(transaction_date=start or end)
+            totals = rows.aggregate(customer_paid=Sum("customer_paid_amount"), you_got=Sum("you_got_amount"))
+            page = Paginator(rows, int(request.GET.get("page_size") or 50)).get_page(request.GET.get("page") or 1)
+            return JsonResponse(
+                {
+                    "ok": True,
+                    "results": [_customer_transaction_payload(row) for row in page.object_list],
+                    "pagination": _pagination_payload(page),
+                    "totals": {
+                        "customer_paid_amount": _json_decimal(totals["customer_paid"]),
+                        "you_got_amount": _json_decimal(totals["you_got"]),
+                    },
+                }
+            )
+        payload = _request_payload(request)
+        if request.method == "POST":
+            customer_id = str(payload.get("customer_id") or "").strip()
+            customer = Customer.objects.filter(pk=customer_id).first()
+            if not customer:
+                raise ValueError("Select a customer.")
+            transaction_date = parse_date(str(payload.get("transaction_date") or "")) or timezone.localdate()
+            if payload.get("transaction_type"):
+                amount = _decimal_from_value(payload.get("amount"), "Amount", required=True)
+                customer_paid, you_got = _customer_transaction_amounts(str(payload.get("transaction_type") or ""), amount)
+            else:
+                customer_paid = _decimal_from_value(payload.get("customer_paid_amount"), "Customer Paid Amount", required=True)
+                you_got = _decimal_from_value(payload.get("you_got_amount"), "You Got Amount", required=True)
+                if customer_paid < 0 or you_got < 0:
+                    raise ValueError("Customer amounts cannot be negative.")
+            row = CustomerTransaction.objects.create(
+                customer=customer,
+                transaction_date=transaction_date,
+                customer_paid_amount=customer_paid,
+                you_got_amount=you_got,
+                note=str(payload.get("note") or "").strip(),
+                created_by=request.user,
+            )
+            return JsonResponse({"ok": True, "data": _customer_transaction_payload(row)}, status=201)
+        if request.method in {"PUT", "PATCH"} and pk:
+            row = CustomerTransaction.objects.filter(pk=pk, is_active=True).first()
+            if not row:
+                return _json_error("Customer transaction not found.", 404)
+            customer_id = str(payload.get("customer_id") or row.customer_id).strip()
+            customer = Customer.objects.filter(pk=customer_id).first()
+            if not customer:
+                raise ValueError("Select a customer.")
+            transaction_date = parse_date(str(payload.get("transaction_date") or "")) or row.transaction_date
+            if payload.get("transaction_type"):
+                amount = _decimal_from_value(payload.get("amount"), "Amount", required=True)
+                customer_paid, you_got = _customer_transaction_amounts(str(payload.get("transaction_type") or ""), amount)
+            else:
+                customer_paid = _decimal_from_value(payload.get("customer_paid_amount", row.customer_paid_amount), "Customer Paid Amount", required=True)
+                you_got = _decimal_from_value(payload.get("you_got_amount", row.you_got_amount), "You Got Amount", required=True)
+                if customer_paid < 0 or you_got < 0:
+                    raise ValueError("Customer amounts cannot be negative.")
+            row.customer = customer
+            row.transaction_date = transaction_date
+            row.customer_paid_amount = customer_paid
+            row.you_got_amount = you_got
+            row.note = str(payload.get("note", row.note) or "").strip()
+            row.save()
+            return JsonResponse({"ok": True, "data": _customer_transaction_payload(row)})
+        if request.method == "DELETE" and pk:
+            row = CustomerTransaction.objects.filter(pk=pk, is_active=True).first()
+            if not row:
+                return _json_error("Customer transaction not found.", 404)
+            row.is_active = False
+            row.save(update_fields=["is_active", "updated_at"])
             return JsonResponse({"ok": True})
         return _json_error("Unsupported method.", 405)
     except (ValueError, IntegrityError) as exc:

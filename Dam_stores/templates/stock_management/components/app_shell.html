@@ -310,7 +310,15 @@
             <div id="notification-panel" class="hidden absolute right-0 mt-2 w-[min(360px,calc(100vw-2rem))] rounded-lg border border-border shadow-xl z-40 overflow-hidden" style="background: rgb(var(--card)); color: rgb(var(--foreground));">
               <div class="px-3 py-2 border-b border-border flex items-center justify-between gap-3">
                 <div class="font-semibold text-sm">Notifications</div>
-                <div class="text-[11px] text-muted-foreground">Last 48 hours</div>
+                <div class="flex items-center gap-2">
+                  <div class="text-[11px] text-muted-foreground">Last 48 hours</div>
+                  {% if app_notification_count %}
+                    <form method="post" action="{% url 'clear-notifications' %}">
+                      {% csrf_token %}
+                      <button type="submit" class="h-7 px-2 rounded-md border border-border text-[11px] hover:bg-muted">Clear</button>
+                    </form>
+                  {% endif %}
+                </div>
               </div>
               <div class="max-h-80 overflow-y-auto divide-y divide-border">
                 {% for notification in app_notifications %}

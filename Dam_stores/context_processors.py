@@ -5,7 +5,7 @@ from datetime import timedelta
 from django.db.utils import OperationalError, ProgrammingError
 from django.utils import timezone
 
-from .models import InAppNotification, ProductStockEntry
+from .models import InAppNotification, NotificationClearance, ProductStockEntry
 
 
 def notifications(request):
@@ -15,7 +15,10 @@ def notifications(request):
     try:
         _create_expiry_notifications()
         cutoff = timezone.now() - timedelta(hours=48)
-        rows = list(InAppNotification.objects.filter(created_at__gte=cutoff)[:25])
+        clearance = NotificationClearance.objects.filter(user=request.user).first()
+        if clearance and clearance.clear_before > cutoff:
+            cutoff = clearance.clear_before
+        rows = list(InAppNotification.objects.filter(created_at__gt=cutoff)[:25])
     except (OperationalError, ProgrammingError):
         rows = []
 
