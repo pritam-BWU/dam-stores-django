@@ -22,6 +22,7 @@ from django.views.decorators.csrf import csrf_exempt
 
 from . import data
 from .models import AuditLog, Customer, CustomerTransaction, DailySalesRecord, DamagedProduct, NotificationClearance, ProductItem, ProductNode, ProductPriceHistory, ProductStockEntry, Role, Supplier, SupplierTransaction, User
+from .pdf_statement import build_statement_pdf
 
 
 MASTER_QUANTITY_UNITS = {
@@ -2202,7 +2203,7 @@ def supplier_detail_pdf(request, supplier_id: int):
             ]
         )
 
-    pdf = _build_statement_pdf(
+    pdf = build_statement_pdf(
         "Supplier Name",
         supplier.supplier_name,
         "Total Outstanding",
@@ -2246,141 +2247,6 @@ def _filtered_transactions(request, rows):
         filter_start = single_date
         filter_end = single_date
     return rows, filter_start, filter_end
-
-
-def _pdf_escape(value) -> str:
-    text = str(value or "").replace("\r", " ").replace("\n", " ")
-    text = text.encode("latin-1", "replace").decode("latin-1")
-    return text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
-
-
-def _pdf_line(x: int, y: int, text, size: int = 9, bold: bool = False, color: tuple[float, float, float] = (0, 0, 0)) -> str:
-    font = "F2" if bold else "F1"
-    r, g, b = color
-    return f"{r:.3f} {g:.3f} {b:.3f} rg BT /{font} {size} Tf {x} {y} Td ({_pdf_escape(text)}) Tj ET\n"
-
-
-def _truncate_pdf_text(value, limit: int) -> str:
-    text = str(value or "").replace("\r", " ").replace("\n", " ").strip()
-    if len(text) <= limit:
-        return text
-    return f"{text[: max(limit - 3, 0)]}..."
-
-
-def _pdf_stroke_color(color: tuple[float, float, float] = (0, 0, 0)) -> str:
-    r, g, b = color
-    return f"{r:.3f} {g:.3f} {b:.3f} RG\n"
-
-
-def _build_statement_pdf(
-    owner_label: str,
-    owner_name: str,
-    remaining_label: str,
-    remaining_value: str,
-    columns: list[str],
-    rows: list[list[str]],
-    totals: tuple[str, str],
-    amount_colors: tuple[tuple[float, float, float], tuple[float, float, float]],
-) -> bytes:
-    width = 595
-    height = 842
-    page_streams = []
-    rows_with_total = [*rows, ["", "Total", totals[0], totals[1]]]
-    rows_per_page = 37
-    row_pages = [rows_with_total[i : i + rows_per_page] for i in range(0, len(rows_with_total), rows_per_page)] or [[["", "Total", totals[0], totals[1]]]]
-    total_pages = len(row_pages)
-    border_x = 28
-    border_y = 28
-    border_w = width - 56
-    border_h = height - 56
-    table_top = 724
-    table_bottom = 58
-    header_bottom = 704
-    col_edges = [42, 190, 300, 420, 553]
-    text_x = [48, 196, 306, 426]
-    row_height = 16
-    red = (0.961, 0.341, 0.251)
-    green = (0.243, 0.722, 0.475)
-    muted = (0.39, 0.43, 0.49)
-    blue = (0.027, 0.455, 0.702)
-
-    for page_number, page_rows in enumerate(row_pages, start=1):
-        stream = ""
-        stream += _pdf_stroke_color()
-        stream += f"1 w {border_x} {border_y} {border_w} {border_h} re S\n"
-        stream += _pdf_line(42, 793, "Dam stores", 20, True, blue)
-        stream += _pdf_line(42, 768, f"{owner_label}: {_truncate_pdf_text(owner_name, 32)}", 9, True)
-        stream += _pdf_line(42, 752, f"{remaining_label}: {remaining_value}", 9, True, red)
-        stream += _pdf_line(392, 795, f"Generated: {timezone.localtime().strftime('%d %b %Y %I:%M %p')}", 8, False, muted)
-        stream += _pdf_line(478, 42, f"Page {page_number} of {total_pages}", 8, False, muted)
-
-        stream += _pdf_stroke_color((0.12, 0.16, 0.22))
-        stream += f"0.8 w {col_edges[0]} {table_top} m {col_edges[-1]} {table_top} l S\n"
-        stream += f"0.8 w {col_edges[0]} {header_bottom} m {col_edges[-1]} {header_bottom} l S\n"
-        stream += f"0.8 w {col_edges[0]} {table_bottom} m {col_edges[-1]} {table_bottom} l S\n"
-        for edge in col_edges:
-            stream += f"0.8 w {edge} {table_bottom} m {edge} {table_top} l S\n"
-        for index, label in enumerate(columns):
-            stream += _pdf_line(text_x[index], 711, label, 8, True)
-
-        y = 688
-        for row in page_rows:
-            is_total = row[1] == "Total"
-            if is_total:
-                stream += _pdf_stroke_color((0.12, 0.16, 0.22))
-                stream += f"0.8 w {col_edges[0]} {y + 10} m {col_edges[-1]} {y + 10} l S\n"
-            stream += _pdf_line(text_x[0], y, _truncate_pdf_text(row[0], 26), 7, is_total)
-            stream += _pdf_line(text_x[1], y, _truncate_pdf_text(row[1], 18), 7, is_total, red if row[1] and row[1] != "Total" else (0, 0, 0))
-            stream += _pdf_line(text_x[2], y, _truncate_pdf_text(row[2], 18), 7, is_total, amount_colors[0])
-            stream += _pdf_line(text_x[3], y, _truncate_pdf_text(row[3], 18), 7, is_total, amount_colors[1])
-            if not is_total:
-                stream += _pdf_stroke_color((0.82, 0.85, 0.89))
-                stream += f"0.25 w {col_edges[0]} {y - 5} m {col_edges[-1]} {y - 5} l S\n"
-            y -= row_height
-
-        if not rows and page_number == 1:
-            stream += _pdf_line(48, 672, "No entries found for this report.", 9, False, muted)
-
-        page_streams.append(stream.encode("latin-1", "replace"))
-
-    font_regular = b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"
-    font_bold = b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>"
-    page_objects = []
-    for index, stream in enumerate(page_streams):
-        page_obj = 5 + (index * 2)
-        content_obj = page_obj + 1
-        page_objects.append(
-            (
-                page_obj,
-                f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {width} {height}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents {content_obj} 0 R >>".encode(
-                    "ascii"
-                ),
-            )
-        )
-        page_objects.append((content_obj, b"<< /Length " + str(len(stream)).encode("ascii") + b" >>\nstream\n" + stream + b"\nendstream"))
-
-    kids = " ".join(f"{obj_id} 0 R" for obj_id, _payload in page_objects if obj_id % 2 == 1)
-    objects = [
-        (1, b"<< /Type /Catalog /Pages 2 0 R >>"),
-        (2, f"<< /Type /Pages /Kids [{kids}] /Count {len(page_streams)} >>".encode("ascii")),
-        (3, font_regular),
-        (4, font_bold),
-        *page_objects,
-    ]
-
-    pdf = b"%PDF-1.4\n"
-    offsets = []
-    for obj_id, payload in objects:
-        offsets.append(len(pdf))
-        pdf += f"{obj_id} 0 obj\n".encode("ascii") + payload + b"\nendobj\n"
-
-    xref_offset = len(pdf)
-    pdf += f"xref\n0 {len(objects) + 1}\n".encode("ascii")
-    pdf += b"0000000000 65535 f \n"
-    for offset in offsets:
-        pdf += f"{offset:010d} 00000 n \n".encode("ascii")
-    pdf += f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF\n".encode("ascii")
-    return pdf
 
 
 def _pdf_response(pdf_bytes: bytes, filename: str) -> HttpResponse:
@@ -2902,7 +2768,7 @@ def customer_detail_pdf(request, customer_id: int):
             ]
         )
 
-    pdf = _build_statement_pdf(
+    pdf = build_statement_pdf(
         "Customer Name",
         customer.customer_name,
         "Total Outstanding",
