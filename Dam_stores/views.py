@@ -12,9 +12,10 @@ from django.db import IntegrityError, transaction
 from django.core.paginator import Paginator
 from django.db.models import DecimalField, ExpressionWrapper, F, Q, Sum, Value
 from django.forms.models import model_to_dict
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.utils import timezone
 from django.utils.dateparse import parse_date
+from django.utils.text import slugify
 from django.shortcuts import redirect
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
@@ -2169,6 +2170,65 @@ def supplier_detail(request, supplier_id: int):
     return render(request, "stock_management/pages/supplier_detail.html", context)
 
 
+@login_required
+def supplier_detail_pdf(request, supplier_id: int):
+    supplier = Supplier.objects.filter(pk=supplier_id).first()
+    if not supplier:
+        messages.error(request, "Supplier not found.")
+        return redirect("suppliers")
+
+    all_transactions = supplier.transactions.select_related("created_by").filter(is_active=True)
+    transactions, filter_start, filter_end = _filtered_transactions(request, all_transactions)
+    totals = transactions.aggregate(outstanding=Sum("outstanding_amount"), paid=Sum("paid_amount"))
+    total_outstanding = totals["outstanding"] or Decimal("0")
+    total_paid = totals["paid"] or Decimal("0")
+    remaining = total_outstanding - total_paid
+
+    balance_by_id = {}
+    running_balance = Decimal("0")
+    for row in reversed(list(all_transactions)):
+        running_balance += (row.outstanding_amount or Decimal("0")) - (row.paid_amount or Decimal("0"))
+        balance_by_id[row.id] = running_balance
+
+    report_rows = []
+    for row in transactions:
+        report_rows.append(
+            [
+                f"{row.transaction_date.strftime('%d %b %y')} - {timezone.localtime(row.created_at).strftime('%I:%M %p')}",
+                _format_supplier_amount(balance_by_id.get(row.id, Decimal("0"))),
+                _format_supplier_amount(row.outstanding_amount or Decimal("0")) if row.outstanding_amount else "",
+                _format_supplier_amount(row.paid_amount or Decimal("0")) if row.paid_amount else "",
+                row.note,
+            ]
+        )
+
+    if filter_start and filter_end:
+        period = f"{filter_start.strftime('%d %b %Y')} to {filter_end.strftime('%d %b %Y')}"
+    else:
+        period = "All entries"
+    pdf = _build_simple_pdf(
+        f"Supplier Report - {supplier.supplier_name}",
+        f"Period: {period}",
+        [
+            ("Supplier", supplier.supplier_name),
+            ("Remaining Outstanding", _format_supplier_amount(remaining)),
+            ("Total Outstanding", _format_supplier_amount(total_outstanding)),
+            ("Total Paid", _format_supplier_amount(total_paid)),
+            ("Rows", str(len(report_rows))),
+        ],
+        [
+            ("Date", 36, 24),
+            ("Balance", 170, 18),
+            ("Outstanding", 285, 18),
+            ("You Paid", 410, 18),
+            ("Note", 535, 46),
+        ],
+        report_rows,
+    )
+    filename = f"supplier-{slugify(supplier.supplier_name) or supplier.id}-report.pdf"
+    return _pdf_response(pdf, filename)
+
+
 def _supplier_payload(supplier: Supplier) -> dict:
     label = f"{supplier.supplier_name} - {supplier.mobile_number}" if supplier.mobile_number else supplier.supplier_name
     return {
@@ -2184,6 +2244,124 @@ def _format_supplier_amount(value: Decimal) -> str:
     value = Decimal(value or Decimal("0"))
     formatted = f"{value:,.2f}".rstrip("0").rstrip(".")
     return f"Rs {formatted}"
+
+
+def _filtered_transactions(request, rows):
+    filter_start = parse_date(request.GET.get("start", ""))
+    filter_end = parse_date(request.GET.get("end", ""))
+    if filter_start and filter_end:
+        if filter_start > filter_end:
+            filter_start, filter_end = filter_end, filter_start
+        rows = rows.filter(transaction_date__range=(filter_start, filter_end))
+    elif filter_start or filter_end:
+        single_date = filter_start or filter_end
+        rows = rows.filter(transaction_date=single_date)
+        filter_start = single_date
+        filter_end = single_date
+    return rows, filter_start, filter_end
+
+
+def _pdf_escape(value) -> str:
+    text = str(value or "").replace("\r", " ").replace("\n", " ")
+    text = text.encode("latin-1", "replace").decode("latin-1")
+    return text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+
+def _pdf_line(x: int, y: int, text, size: int = 9, bold: bool = False) -> str:
+    font = "F2" if bold else "F1"
+    return f"BT /{font} {size} Tf {x} {y} Td ({_pdf_escape(text)}) Tj ET\n"
+
+
+def _truncate_pdf_text(value, limit: int) -> str:
+    text = str(value or "").replace("\r", " ").replace("\n", " ").strip()
+    if len(text) <= limit:
+        return text
+    return f"{text[: max(limit - 3, 0)]}..."
+
+
+def _build_simple_pdf(title: str, subtitle: str, summary: list[tuple[str, str]], columns: list[tuple[str, int, int]], rows: list[list[str]]) -> bytes:
+    width = 842
+    height = 595
+    page_streams = []
+    rows_per_page = 25
+    row_pages = [rows[i : i + rows_per_page] for i in range(0, len(rows), rows_per_page)] or [[]]
+    total_pages = len(row_pages)
+
+    for page_number, page_rows in enumerate(row_pages, start=1):
+        stream = ""
+        stream += _pdf_line(36, 558, title, 16, True)
+        stream += _pdf_line(36, 539, subtitle, 9)
+        stream += _pdf_line(720, 558, f"Page {page_number} of {total_pages}", 8)
+        stream += _pdf_line(720, 544, f"Generated {timezone.localtime().strftime('%d %b %Y %I:%M %p')}", 8)
+
+        summary_y = 513
+        for index, (label, value) in enumerate(summary):
+            x = 36 + (index % 3) * 245
+            y = summary_y - (index // 3) * 16
+            stream += _pdf_line(x, y, f"{label}: {value}", 9, True)
+
+        header_y = 465
+        stream += "0.75 w 36 456 m 806 456 l S\n"
+        for label, x, _limit in columns:
+            stream += _pdf_line(x, header_y, label, 8, True)
+        stream += "0.75 w 36 450 m 806 450 l S\n"
+
+        y = 432
+        if page_rows:
+            for row in page_rows:
+                for value, (_label, x, limit) in zip(row, columns):
+                    stream += _pdf_line(x, y, _truncate_pdf_text(value, limit), 8)
+                stream += "0.25 w 36 {0} m 806 {0} l S\n".format(y - 5)
+                y -= 16
+        else:
+            stream += _pdf_line(36, y, "No entries found for this report.", 9)
+
+        page_streams.append(stream.encode("latin-1", "replace"))
+
+    font_regular = b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"
+    font_bold = b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>"
+    page_objects = []
+    for index, stream in enumerate(page_streams):
+        page_obj = 5 + (index * 2)
+        content_obj = page_obj + 1
+        page_objects.append(
+            (
+                page_obj,
+                f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {width} {height}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents {content_obj} 0 R >>".encode(
+                    "ascii"
+                ),
+            )
+        )
+        page_objects.append((content_obj, b"<< /Length " + str(len(stream)).encode("ascii") + b" >>\nstream\n" + stream + b"\nendstream"))
+
+    kids = " ".join(f"{obj_id} 0 R" for obj_id, _payload in page_objects if obj_id % 2 == 1)
+    objects = [
+        (1, b"<< /Type /Catalog /Pages 2 0 R >>"),
+        (2, f"<< /Type /Pages /Kids [{kids}] /Count {len(page_streams)} >>".encode("ascii")),
+        (3, font_regular),
+        (4, font_bold),
+        *page_objects,
+    ]
+
+    pdf = b"%PDF-1.4\n"
+    offsets = []
+    for obj_id, payload in objects:
+        offsets.append(len(pdf))
+        pdf += f"{obj_id} 0 obj\n".encode("ascii") + payload + b"\nendobj\n"
+
+    xref_offset = len(pdf)
+    pdf += f"xref\n0 {len(objects) + 1}\n".encode("ascii")
+    pdf += b"0000000000 65535 f \n"
+    for offset in offsets:
+        pdf += f"{offset:010d} 00000 n \n".encode("ascii")
+    pdf += f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF\n".encode("ascii")
+    return pdf
+
+
+def _pdf_response(pdf_bytes: bytes, filename: str) -> HttpResponse:
+    response = HttpResponse(pdf_bytes, content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
 
 
 def _supplier_transaction_type(row: SupplierTransaction) -> str:
@@ -2665,6 +2843,65 @@ def customer_detail(request, customer_id: int):
         "remaining_you_got": _format_supplier_amount(remaining_you_got_value),
     }
     return render(request, "stock_management/pages/customer_detail.html", context)
+
+
+@login_required
+def customer_detail_pdf(request, customer_id: int):
+    customer = Customer.objects.filter(pk=customer_id).first()
+    if not customer:
+        messages.error(request, "Customer not found.")
+        return redirect("customers")
+
+    all_transactions = customer.transactions.select_related("created_by").filter(is_active=True)
+    transactions, filter_start, filter_end = _filtered_transactions(request, all_transactions)
+    totals = transactions.aggregate(customer_paid=Sum("customer_paid_amount"), you_got=Sum("you_got_amount"))
+    total_customer_paid = totals["customer_paid"] or Decimal("0")
+    total_you_got = totals["you_got"] or Decimal("0")
+    remaining = total_you_got - total_customer_paid
+
+    balance_by_id = {}
+    running_balance = Decimal("0")
+    for row in reversed(list(all_transactions)):
+        running_balance += (row.you_got_amount or Decimal("0")) - (row.customer_paid_amount or Decimal("0"))
+        balance_by_id[row.id] = running_balance
+
+    report_rows = []
+    for row in transactions:
+        report_rows.append(
+            [
+                f"{row.transaction_date.strftime('%d %b %y')} - {timezone.localtime(row.created_at).strftime('%I:%M %p')}",
+                _format_supplier_amount(balance_by_id.get(row.id, Decimal("0"))),
+                _format_supplier_amount(row.customer_paid_amount or Decimal("0")) if row.customer_paid_amount else "",
+                _format_supplier_amount(row.you_got_amount or Decimal("0")) if row.you_got_amount else "",
+                row.note,
+            ]
+        )
+
+    if filter_start and filter_end:
+        period = f"{filter_start.strftime('%d %b %Y')} to {filter_end.strftime('%d %b %Y')}"
+    else:
+        period = "All entries"
+    pdf = _build_simple_pdf(
+        f"Customer Report - {customer.customer_name}",
+        f"Period: {period}",
+        [
+            ("Customer", customer.customer_name),
+            ("Remaining You Got", _format_supplier_amount(remaining)),
+            ("Total Customer Paid", _format_supplier_amount(total_customer_paid)),
+            ("Total You Got", _format_supplier_amount(total_you_got)),
+            ("Rows", str(len(report_rows))),
+        ],
+        [
+            ("Date", 36, 24),
+            ("Balance", 170, 18),
+            ("Customer Paid", 285, 18),
+            ("You Got", 410, 18),
+            ("Note", 535, 46),
+        ],
+        report_rows,
+    )
+    filename = f"customer-{slugify(customer.customer_name) or customer.id}-report.pdf"
+    return _pdf_response(pdf, filename)
 
 
 def _customer_payload(customer: Customer) -> dict:

@@ -1,7 +1,16 @@
 {% extends "stock_management/components/app_shell.html" %}
 
 {% block content %}
-<div id="supplier-detail-page" class="flex h-[calc(100vh-7rem)] flex-col gap-4 overflow-hidden">
+<style>
+  .detail-list-scroll {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+  }
+</style>
+<div id="supplier-detail-page" class="flex h-[calc(100dvh-6rem)] sm:h-[calc(100vh-7rem)] min-h-0 flex-col gap-3 sm:gap-4 overflow-hidden">
   {% if messages %}
     <div class="space-y-2 shrink-0">
       {% for message in messages %}
@@ -10,24 +19,29 @@
     </div>
   {% endif %}
 
-  <div id="supplier-summary-section" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3 sm:gap-4 shrink-0">
-    <div class="bg-card border border-border rounded-xl p-4 sm:p-5 min-w-0">
+  <div id="supplier-summary-section" class="grid grid-cols-2 xl:grid-cols-5 gap-2 sm:gap-4 shrink-0">
+    <div class="bg-card border border-border rounded-xl p-3 sm:p-5 min-w-0">
       <div class="text-xs sm:text-sm text-muted-foreground">Supplier Name</div>
       <div class="text-xl sm:text-2xl font-semibold mt-1 truncate">{{ supplier.supplier_name }}</div>
+      <a href="{% url 'supplier-detail-pdf' supplier.id %}{% if filter_start or filter_end %}?start={{ filter_start|date:'Y-m-d' }}&end={{ filter_end|date:'Y-m-d' }}{% endif %}"
+         class="mt-2 h-7 px-2 inline-flex items-center gap-1 rounded-md bg-sky-700 text-white text-xs font-medium hover:bg-sky-600">
+        <i data-lucide="file-down" class="w-3.5 h-3.5"></i>
+        PDF
+      </a>
     </div>
-    <div class="bg-card border border-border rounded-xl p-4 sm:p-5 min-w-0">
+    <div class="bg-card border border-border rounded-xl p-3 sm:p-5 min-w-0">
       <div class="text-xs sm:text-sm text-muted-foreground">Remaining Outstanding</div>
       <div class="text-xl sm:text-2xl font-semibold mt-1 truncate" style="color: rgb(var(--destructive));">{{ remaining_outstanding }}</div>
     </div>
-    <div class="bg-card border border-border rounded-xl p-4 sm:p-5 min-w-0">
+    <div class="bg-card border border-border rounded-xl p-3 sm:p-5 min-w-0">
       <div class="text-xs sm:text-sm text-muted-foreground">Total Outstanding</div>
       <div class="text-xl sm:text-2xl font-semibold mt-1 truncate">{{ total_outstanding }}</div>
     </div>
-    <div class="bg-card border border-border rounded-xl p-4 sm:p-5 min-w-0">
+    <div class="bg-card border border-border rounded-xl p-3 sm:p-5 min-w-0">
       <div class="text-xs sm:text-sm text-muted-foreground">Total Paid</div>
       <div class="text-xl sm:text-2xl font-semibold mt-1 truncate text-success">{{ total_paid }}</div>
     </div>
-   <div class="bg-card border border-border rounded-xl p-4 sm:p-5 min-w-0">
+   <div class="bg-card border border-border rounded-xl p-3 sm:p-5 min-w-0 col-span-2 xl:col-span-1">
   <style>
     input[type="date"]::-webkit-calendar-picker-indicator { display: none; }
     input[type="date"] { appearance: none; -webkit-appearance: none; }
@@ -50,7 +64,7 @@
 </div>
   </div>
 
-  <div id="supplier-entry-section" class="flex min-h-0 flex-1 flex-col gap-2">
+  <div id="supplier-entry-section" class="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden">
     <div class="flex items-center gap-2 px-1 text-xs sm:text-sm uppercase tracking-wider text-muted-foreground font-semibold shrink-0">
       <div class="grid flex-1 grid-cols-[minmax(0,1fr)_minmax(112px,0.32fr)_minmax(112px,0.32fr)_44px] gap-0">
         <div>Entries</div>
@@ -63,60 +77,60 @@
       </button>
     </div>
 
-    <div class="min-h-0 flex-1 overflow-y-auto pr-1 space-y-2 modal-scroll">
+    <div class="detail-list-scroll flex-1 pr-1 space-y-2 modal-scroll">
       {% for row in transaction_page.object_list %}
         <div data-transaction-id="{{ row.id }}" class="transaction-row w-full grid grid-cols-[minmax(0,1fr)_minmax(96px,0.32fr)_minmax(96px,0.32fr)_44px] bg-card border border-border rounded-lg overflow-hidden text-left hover:bg-muted/30 cursor-pointer">
-          <div class="min-w-0 px-4 sm:px-5 py-3">
-            <div class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 min-w-0">
-              <div class="text-base sm:text-lg font-medium truncate">{{ row.transaction_date|date:"d M y" }} - {{ row.created_at|date:"h:i A" }}</div>
-              <div class="inline-flex max-w-full items-center rounded-md px-2 py-1 text-sm font-medium shrink-0" style="background: rgb(var(--destructive) / 0.06); color: rgb(var(--destructive));">
+          <div class="min-w-0 px-3 sm:px-4 py-2">
+            <div class="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 min-w-0">
+              <div class="text-xs sm:text-sm font-medium truncate">{{ row.transaction_date|date:"d M y" }} - {{ row.created_at|date:"h:i A" }}</div>
+              <div class="inline-flex max-w-full items-center rounded-md px-1.5 py-0.5 text-[11px] sm:text-xs font-medium shrink-0" style="background: rgb(var(--destructive) / 0.06); color: rgb(var(--destructive));">
                 <span class="truncate">Bal. {{ row.balance_after_label }}</span>
               </div>
             </div>
           </div>
-          <div class="flex items-center justify-center px-3 sm:px-5 py-3 border-l border-border {% if row.outstanding_amount %}bg-red-50/70 dark:bg-red-950/10{% endif %}">
+          <div class="flex items-center justify-center px-3 sm:px-4 py-2 border-l border-border {% if row.outstanding_amount %}bg-red-50/70 dark:bg-red-950/10{% endif %}">
             {% if row.outstanding_amount %}
-              <span class="text-lg sm:text-2xl font-semibold" style="color: rgb(var(--destructive));">{{ row.outstanding_label }}</span>
+              <span class="text-sm sm:text-lg font-semibold" style="color: rgb(var(--destructive));">{{ row.outstanding_label }}</span>
             {% endif %}
           </div>
-          <div class="flex items-center justify-center px-3 sm:px-5 py-3 border-l border-border {% if row.paid_amount %}bg-emerald-50/70 dark:bg-emerald-950/10{% endif %}">
+          <div class="flex items-center justify-center px-3 sm:px-4 py-2 border-l border-border {% if row.paid_amount %}bg-emerald-50/70 dark:bg-emerald-950/10{% endif %}">
             {% if row.paid_amount %}
-              <span class="text-lg sm:text-2xl font-semibold text-success">{{ row.paid_label }}</span>
+              <span class="text-sm sm:text-lg font-semibold text-success">{{ row.paid_label }}</span>
             {% endif %}
           </div>
-          <div class="flex items-center justify-center px-2 py-3 border-l border-border">
-            <button type="button" class="delete-transaction w-8 h-8 rounded-md border border-border text-destructive hover:bg-destructive/10 inline-flex items-center justify-center" data-transaction-id="{{ row.id }}" title="Delete entry">
-              <i data-lucide="x" class="w-4 h-4"></i>
+          <div class="flex items-center justify-center px-2 py-2 border-l border-border">
+            <button type="button" class="delete-transaction w-7 h-7 rounded-md border border-border text-destructive hover:bg-destructive/10 inline-flex items-center justify-center" data-transaction-id="{{ row.id }}" title="Delete entry">
+              <i data-lucide="x" class="w-3.5 h-3.5"></i>
             </button>
           </div>
         </div>
       {% empty %}
         <div class="bg-card border border-border rounded-xl px-4 py-12 text-center text-sm text-muted-foreground">No supplier transactions found.</div>
       {% endfor %}
-    </div>
 
-    {% if transaction_page.paginator.count %}
-      <div class="bg-card border border-border rounded-xl px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-sm shrink-0">
-        <div class="text-muted-foreground text-xs">
-          Showing {{ transaction_page.start_index }}-{{ transaction_page.end_index }} of {{ transaction_page.paginator.count }}
+      {% if transaction_page.paginator.count %}
+        <div class="bg-card border border-border rounded-xl px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-sm">
+          <div class="text-muted-foreground text-xs">
+            Showing {{ transaction_page.start_index }}-{{ transaction_page.end_index }} of {{ transaction_page.paginator.count }}
+          </div>
+          <div class="flex items-center gap-2">
+            {% if transaction_page.has_previous %}
+              <a class="h-8 px-3 rounded-md border border-border inline-flex items-center justify-center hover:bg-muted text-sm"
+                 href="?start={{ filter_start|date:'Y-m-d' }}&end={{ filter_end|date:'Y-m-d' }}&page={{ transaction_page.previous_page_number }}">Previous</a>
+            {% else %}
+              <span class="h-8 px-3 rounded-md border border-border inline-flex items-center justify-center text-muted-foreground opacity-50 text-sm">Previous</span>
+            {% endif %}
+            <span class="text-xs text-muted-foreground">Page {{ transaction_page.number }} of {{ transaction_page.paginator.num_pages }}</span>
+            {% if transaction_page.has_next %}
+              <a class="h-8 px-3 rounded-md border border-border inline-flex items-center justify-center hover:bg-muted text-sm"
+                 href="?start={{ filter_start|date:'Y-m-d' }}&end={{ filter_end|date:'Y-m-d' }}&page={{ transaction_page.next_page_number }}">Next</a>
+            {% else %}
+              <span class="h-8 px-3 rounded-md border border-border inline-flex items-center justify-center text-muted-foreground opacity-50 text-sm">Next</span>
+            {% endif %}
+          </div>
         </div>
-        <div class="flex items-center gap-2">
-          {% if transaction_page.has_previous %}
-            <a class="h-8 px-3 rounded-md border border-border inline-flex items-center justify-center hover:bg-muted text-sm"
-               href="?start={{ filter_start|date:'Y-m-d' }}&end={{ filter_end|date:'Y-m-d' }}&page={{ transaction_page.previous_page_number }}">Previous</a>
-          {% else %}
-            <span class="h-8 px-3 rounded-md border border-border inline-flex items-center justify-center text-muted-foreground opacity-50 text-sm">Previous</span>
-          {% endif %}
-          <span class="text-xs text-muted-foreground">Page {{ transaction_page.number }} of {{ transaction_page.paginator.num_pages }}</span>
-          {% if transaction_page.has_next %}
-            <a class="h-8 px-3 rounded-md border border-border inline-flex items-center justify-center hover:bg-muted text-sm"
-               href="?start={{ filter_start|date:'Y-m-d' }}&end={{ filter_end|date:'Y-m-d' }}&page={{ transaction_page.next_page_number }}">Next</a>
-          {% else %}
-            <span class="h-8 px-3 rounded-md border border-border inline-flex items-center justify-center text-muted-foreground opacity-50 text-sm">Next</span>
-          {% endif %}
-        </div>
-      </div>
-    {% endif %}
+      {% endif %}
+    </div>
   </div>
 </div>
 
