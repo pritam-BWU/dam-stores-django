@@ -127,9 +127,9 @@
         <button type="button" data-transaction-kind="outstanding" class="h-24 rounded-lg border border-border hover:border-primary hover:bg-primary/5 text-left px-4 transition">
           <span class="inline-flex items-center gap-2 font-semibold">
             <i data-lucide="alert-circle" class="w-4 h-4"></i>
-            Outstanding
+            Bill
           </span>
-          <span class="block text-xs text-muted-foreground mt-1">Supplier amount still remaining</span>
+          <span class="block text-xs text-muted-foreground mt-1">Billing amount data from supplier </span>
         </button>
         <button type="button" data-transaction-kind="paid" class="h-24 rounded-lg border border-border hover:border-primary hover:bg-primary/5 text-left px-4 transition">
           <span class="inline-flex items-center gap-2 font-semibold">
@@ -233,9 +233,9 @@
       transactionKindPicker.classList.add("hidden");
       transactionFields.classList.remove("hidden");
       setTransactionFieldsDisabled(false);
-      transactionTitle.textContent = isPaid ? "Add Paid Amount" : "Add Outstanding Amount";
-      transactionSubtitle.textContent = isPaid ? "Save a payment made to the supplier" : "Save an outstanding amount for the supplier";
-      transactionAmountLabel.textContent = isPaid ? "Paid Amount" : "Outstanding Amount";
+      transactionTitle.textContent = isPaid ? "Add Your Paid Amount" : "Add Billing Amount";
+      transactionSubtitle.textContent = isPaid ? "Save a payment made to the supplier" : "Save teh billing amount from the supplier";
+      transactionAmountLabel.textContent = isPaid ? "Paid Amount" : "Billing Amount";
       setTimeout(() => supplierSearch?.focus(), 0);
     });
   });

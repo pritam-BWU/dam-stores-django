@@ -127,16 +127,16 @@
         <button type="button" data-transaction-kind="customer_paid" class="h-24 rounded-lg border border-border hover:border-primary hover:bg-primary/5 text-left px-4 transition">
           <span class="inline-flex items-center gap-2 font-semibold">
             <i data-lucide="alert-circle" class="w-4 h-4"></i>
-            Customer Paid
+            Customer Paid me 
           </span>
           <span class="block text-xs text-muted-foreground mt-1">Customer paid amount record</span>
         </button>
         <button type="button" data-transaction-kind="you_got" class="h-24 rounded-lg border border-border hover:border-primary hover:bg-primary/5 text-left px-4 transition">
           <span class="inline-flex items-center gap-2 font-semibold">
             <i data-lucide="check-circle-2" class="w-4 h-4"></i>
-            You Got
+            You Give/Bill
           </span>
-          <span class="block text-xs text-muted-foreground mt-1">Amount you got from the customer</span>
+          <span class="block text-xs text-muted-foreground mt-1">Billing amount </span>
         </button>
       </div>
       <div id="transaction-fields" class="hidden space-y-4">
@@ -236,8 +236,8 @@
       transactionKindPicker.classList.add("hidden");
       transactionFields.classList.remove("hidden");
       setTransactionFieldsDisabled(false);
-      transactionTitle.textContent = isYouGot ? "Add You Got Amount" : "Add Customer Paid Amount";
-      transactionSubtitle.textContent = isYouGot ? "Save an amount you got from the customer" : "Save a customer paid amount record";
+      transactionTitle.textContent = isYouGot ? "Add Billing Amount" : "Add Customer Paid Amount";
+      transactionSubtitle.textContent = isYouGot ? "Save the billing amount for the customer" : "Save a customer paid amount record";
       transactionAmountLabel.textContent = isYouGot ? "You Got Amount" : "Customer Paid Amount";
       setTimeout(() => customerSearch?.focus(), 0);
     });

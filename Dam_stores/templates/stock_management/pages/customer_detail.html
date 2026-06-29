@@ -30,7 +30,7 @@
       </a>
     </div>
     <div class="bg-card border border-border rounded-xl p-3 sm:p-5 min-w-0">
-      <div class="text-xs sm:text-sm text-muted-foreground">Remaining You Got</div>
+      <div class="text-xs sm:text-sm text-muted-foreground">Total Outstanding</div>
       <div class="text-xl sm:text-2xl font-semibold mt-1 truncate" style="color: rgb(var(--destructive));">{{ remaining_you_got }}</div>
     </div>
     <div class="bg-card border border-border rounded-xl p-3 sm:p-5 min-w-0">
@@ -38,7 +38,7 @@
       <div class="text-xl sm:text-2xl font-semibold mt-1 truncate text-success">{{ total_customer_paid }}</div>
     </div>
     <div class="bg-card border border-border rounded-xl p-3 sm:p-5 min-w-0">
-      <div class="text-xs sm:text-sm text-muted-foreground">Total You Got</div>
+      <div class="text-xs sm:text-sm text-muted-foreground">Total You Give/Bill</div>
       <div class="text-xl sm:text-2xl font-semibold mt-1 truncate" style="color: rgb(var(--destructive));">{{ total_you_got }}</div>
     </div>
     <div class="bg-card border border-border rounded-xl p-3 sm:p-5 min-w-0 col-span-2 xl:col-span-1">
@@ -67,7 +67,7 @@
       <div class="grid flex-1 grid-cols-[minmax(0,1fr)_minmax(112px,0.32fr)_minmax(112px,0.32fr)_44px] gap-0">
         <div>Entries</div>
         <div class="text-center">Customer Paid</div>
-        <div class="text-center">You Got</div>
+        <div class="text-center">You Give/Bill</div>
         <div></div>
       </div>
       <button id="customer-summary-toggle" type="button" class="w-8 h-8 rounded-md border border-border inline-flex items-center justify-center hover:bg-muted text-foreground" aria-label="Maximize entries" title="Maximize entries">
